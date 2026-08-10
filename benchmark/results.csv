@@ -1,0 +1,2 @@
+arm,task,rep,status,success,edited_golden,first_relevant_ms,first_relevant_file,first_edit_ms,exploration_before_first_edit,first_relevant_calls,input_tokens,output_tokens,cache_tokens,total_tokens,cost_usd,wall_ms,capsule_tokens,failure_category
+context,sess-go,1,error,,false,,,,0,0,0,0,0,0,0.000000,0,0,environment
