@@ -1,0 +1,60 @@
+# Context benchmark manifest (frozen Phase-0 fixture contract)
+#
+# See meta/cross-product/context-benchmark-plan.md and
+# meta/cross-product/context-benchmark-acknowledgement.md.
+#
+# Every task runs each enabled arm with the same model, prompt, repo state,
+# tool access, time limit, and retry policy. Golden locations are the expected
+# "first relevant" source points; they drive recall metrics and are the same
+# for every arm.
+
+model:
+  id: opencode-go/deepseek-v4-flash
+  usage_multiplier: 2 # deepseek-v4-flash is billed at 2x usage; applied to token + cost accounting
+  timeout_seconds: 1200
+  permission: auto # auto-approve tool permissions (scripted, disposable fixtures)
+  reps: 2
+
+arms:
+  cold:
+    label: agent + cold opencode
+    enabled: true
+  context:
+    label: agent + Context structural capsule
+    enabled: true
+  graft-structural: # later: graft host arm over the SAME manifest
+    label: agent + Graft structural
+    enabled: false
+  graft-deep:
+    label: agent + Graft deep
+    enabled: false
+  context-semantic: # MVP 2
+    label: agent + Context semantic retrieval
+    enabled: false
+
+# NOTE: sample tasks below use the spike fixtures to make the harness runnable.
+# The real Phase-0 fixture (5 Graft-style + 5 Terminal-Bench 2.1 tasks, frozen
+# revisions, golden expected locations) replaces these before any publication.
+tasks:
+  - id: sess-go
+    repo: spike/fixtures/go
+    prompt: |
+      Where is session persistence handled in this repository? Make the store
+      survive restarts by adding a Flush method that persists the in-memory
+      map, and call it from Close.
+    golden:
+      - "internal/session/store.go:18"
+      - "internal/session/store.go:42"
+      - "internal/session/store_test.go:6"
+    verify_cmd: go test ./...
+  - id: sess-ts
+    repo: spike/fixtures/typescript
+    prompt: |
+      Where is session persistence handled in this repository? Add a clear
+      method to the Store interface that wipes all entries, and implement it
+      in both openStore and MemoryStore.
+    golden:
+      - "src/session/store.ts:7"
+      - "src/session/store.ts:19"
+      - "src/session/store.test.ts:5"
+    verify_cmd: bun test
