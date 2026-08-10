@@ -1,0 +1,56 @@
+{
+  "env": {
+    "bun": "1.4.0",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "perFixture": {
+    "go": {
+      "files": 5,
+      "symbols": 20,
+      "edges": 62,
+      "coldMs": 30,
+      "warmMs": 0,
+      "topHit": "internal/session/store.go:23"
+    },
+    "typescript": {
+      "files": 5,
+      "symbols": 29,
+      "edges": 92,
+      "coldMs": 19,
+      "warmMs": 0,
+      "topHit": "src/session/store.ts:7"
+    },
+    "python": {
+      "files": 4,
+      "symbols": 20,
+      "edges": 57,
+      "coldMs": 18,
+      "warmMs": 0,
+      "topHit": "app/session/store.py:13"
+    }
+  },
+  "coldScanMs": 67,
+  "warmQueryMs": 14,
+  "incremental": {
+    "parsed": 1,
+    "reused": 3,
+    "refreshMs": 2
+  },
+  "cacheReloadParsed": 0,
+  "deterministic": true,
+  "hookMs": 80,
+  "startupMs": 20,
+  "binarySizeBytes": 0,
+  "binaryRunMs": 0,
+  "peakRssMb": 150,
+  "failures": [
+    "standalone binary: Error: bun-compiled binaries are SIGKILL'd on exec in this host (probe exit 137); standalone packaging cannot be verified here — needs a host without the sandbox or a stable Bun release"
+  ],
+  "budgets": {
+    "warmQueryMs": 150,
+    "incrementalScanMs": 500,
+    "coldFixtureMs": 2000,
+    "hookMs": 1000
+  }
+}
