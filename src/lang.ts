@@ -41,11 +41,11 @@ export const LANGS: LangConf[] = [
   { name: 'rs', exts: ['.rs'], wasm: DIR + 'tree-sitter-rust/tree-sitter-rust.wasm' },
   { name: 'c', exts: ['.c', '.h'], wasm: DIR + 'tree-sitter-c/tree-sitter-c.wasm' },
   { name: 'cpp', exts: ['.cpp', '.hpp', '.cc', '.hh'], wasm: DIR + 'tree-sitter-cpp/tree-sitter-cpp.wasm' },
-  { name: 'cs', exts: ['.cs'], wasm: DIR + 'tree-sitter-c-sharp/tree-sitter-c-sharp.wasm' },
+  { name: 'cs', exts: ['.cs'], wasm: DIR + 'tree-sitter-c-sharp/tree-sitter-c_sharp.wasm' },
   { name: 'php', exts: ['.php'], wasm: DIR + 'tree-sitter-php/tree-sitter-php.wasm' },
   { name: 'sh', exts: ['.sh', '.bash', '.zsh'], wasm: DIR + 'tree-sitter-bash/tree-sitter-bash.wasm' },
-  { name: 'kt', exts: ['.kt', '.kts'], wasm: DIR + 'tree-sitter-kotlin/tree-sitter-kotlin.wasm' },
-  { name: 'swift', exts: ['.swift'], wasm: DIR + 'tree-sitter-swift/tree-sitter-swift.wasm' },
+  { name: 'kt', exts: ['.kt', '.kts'], wasm: '' }, // rg-only: no usable wasm grammar (tree-sitter-kotlin fails to build)
+  { name: 'swift', exts: ['.swift'], wasm: '' }, // rg-only: tree-sitter-swift ships native .node only, no wasm
 ];
 
 export function langFor(path: string): LangConf | undefined {

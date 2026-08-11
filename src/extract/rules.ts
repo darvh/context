@@ -147,8 +147,8 @@ export const SIG_LANG_SPECIAL: Record<string, "first-line-only"> = {
 };
 
 export const RG_DECL = {
-  fn: /^(?:(?:export|pub|default|async|private|public|protected|static|extern|internal|open|abstract|final|sealed)\s+)*(?:async\s+)?(?:fn|function|def|func)\s+([A-Za-z_$][\w$]*)/,
-  class: /^(?:(?:export|pub|public|private|abstract|final|internal|open|sealed|static)\s+)*(?:class|struct|trait|interface|enum|object)\s+([A-Za-z_][\w$]*)/,
+  fn: /^(?:(?:export|pub|default|async|private|public|protected|static|extern|internal|open|abstract|final|sealed)\s+)*(?:async\s+)?(?:fn|function|def|func|sub)\s+([A-Za-z_$][\w$]*)/,
+  class: /^(?:(?:export|pub|public|private|abstract|final|internal|open|sealed|static)\s+)*(?:class|struct|trait|interface|enum|object|defmodule)\s+([A-Za-z_][\w$]*)/,
   type: /^(?:(?:export|pub|public|type)\s+)*type\s+([A-Za-z_][\w$]*)\s*[=:{]/,
   const: /^(?:(?:export|pub|public|final|static|const)\s+)*(?:const|let|var|val|defconst)\s+([A-Za-z_$][\w$]*)\s*=/,
   cFunc: /^\s*(?:(?:public|private|protected|static|final|inline|virtual|override|export|async|extern)\s+)*(?:[\w<>:\[\]]+\s+)+([A-Za-z_]\w*)\s*\([^)]*\)\s*(?:\{|;|$)/,
@@ -169,8 +169,8 @@ export const RG_IMPORT_RES = [
 
 // generic fallback for quick kind inference from line
 export function rgKindFromLine(line: string): RgKind {
-  if (/^\s*(async\s+)?(fn|function|def|func)\b/.test(line)) return "function";
-  if (/\b(class|trait|interface|object)\b/.test(line)) return "class";
+  if (/^\s*(async\s+)?(fn|function|def|func|sub)\b/.test(line)) return "function";
+  if (/\b(class|trait|interface|object|defmodule)\b/.test(line)) return "class";
   if (/\b(struct|enum)\b/.test(line)) return "struct";
   if (/^\s*type\b/.test(line)) return "type";
   if (/^\s*(const|final|val)\b/.test(line)) return "const";

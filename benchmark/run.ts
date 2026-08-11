@@ -98,6 +98,26 @@ process.on("exit", killAllGroups);
 process.on("SIGINT", () => { killAllGroups(); process.exit(130); });
 process.on("SIGTERM", () => { killAllGroups(); process.exit(143); });
 
+/** Export the full opencode session (message + part records) from the db next
+ *  to the raw transcript. Best-effort; missing sqlite3/storage never fails a run. */
+async function exportSession(rawDir: string, id: string, stdout: string): Promise<void> {
+  try {
+    const sid = /"sessionID":"(ses_[^"]+)"/.exec(stdout)?.[1];
+    if (!sid) return;
+    const db = process.env.OPENCODE_DB ?? path.join(process.env.HOME ?? "", ".local", "share", "opencode", "opencode.db");
+    const p = Bun.spawn({
+      cmd: [
+        "sqlite3", db,
+        `SELECT json_object('kind','message','id',id,'time',time_created,'data',json(data)) FROM message WHERE session_id='${sid}' ORDER BY time_created; SELECT json_object('kind','part','id',id,'message_id',message_id,'time',time_created,'data',json(data)) FROM part WHERE session_id='${sid}' ORDER BY time_created;`,
+      ],
+      stdout: "pipe", stderr: "pipe",
+    });
+    const out = await new Response(p.stdout).text();
+    const code = await p.exited;
+    if (code === 0 && out.trim()) await fs.writeFile(path.join(rawDir, `${id}.session.jsonl`), out);
+  } catch {}
+}
+
 async function runVerify(cmd: string | undefined, dir: string): Promise<{ status: boolean | null; out: string }> {
   if (!cmd) return { status: null, out: "" };
   try {
@@ -176,6 +196,7 @@ async function runOc(
   const wallMs = Date.now() - t0;
 
   await fs.writeFile(rawFile, stdout);
+  await exportSession(rawDir, `${id}`, stdout); // full opencode message/part log
 
   const transcript = parseTranscript(stdout.split("\n"));
   const goldenFiles = new Set(task.golden.map((g) => g.split(":")[0]));
