@@ -42,10 +42,11 @@ arms:
 # stable. Example slot once a task is pinned:
 #
 #   - id: tb2.1-<task-id>
-#     repo: /abs/path/to/terminal-bench-fixture   # pinned revision
-#     revision: <git-rev>
+#     repo: git@github.com:owner/repo.git      # remote URLs are cloned; local dirs copied
+#     revision: <git-sha>                       # exact pin; harness checks out and records it
 #     prompt: "<task definition verbatim, unmodified>"
 #     golden: ["<expected first-relevant location>"]
+#     setup_cmd: "<terminal-bench setup script, run pre-agent>"   # optional
 #     verify_cmd: <frozen test/check command>
 #
 # SWE-bench follow-up uses the same slot shape; record per-task failure cause

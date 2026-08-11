@@ -9,7 +9,7 @@
       "files": 5,
       "symbols": 20,
       "edges": 62,
-      "coldMs": 30,
+      "coldMs": 25,
       "warmMs": 0,
       "topHit": "internal/session/store.go:23"
     },
@@ -30,20 +30,20 @@
       "topHit": "app/session/store.py:13"
     }
   },
-  "coldScanMs": 67,
-  "warmQueryMs": 14,
+  "coldScanMs": 62,
+  "warmQueryMs": 16,
   "incremental": {
     "parsed": 1,
     "reused": 3,
-    "refreshMs": 2
+    "refreshMs": 1
   },
   "cacheReloadParsed": 0,
   "deterministic": true,
-  "hookMs": 80,
-  "startupMs": 20,
+  "hookMs": 75,
+  "startupMs": 26,
   "binarySizeBytes": 0,
   "binaryRunMs": 0,
-  "peakRssMb": 150,
+  "peakRssMb": 100,
   "failures": [
     "standalone binary: Error: bun-compiled binaries are SIGKILL'd on exec in this host (probe exit 137); standalone packaging cannot be verified here — needs a host without the sandbox or a stable Bun release"
   ],

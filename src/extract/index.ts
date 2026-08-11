@@ -7,11 +7,15 @@ import { extractPy } from "./py";
 import type { FileFacts } from "../facts";
 import { parse } from "../parse";
 
+const EXTRACTOR_MAP: Record<string, Extractor> = {
+  go: extractGo,
+  ts: extractTsJs,
+  js: extractTsJs,
+  py: extractPy,
+};
+
 export function extractorFor(lang: string): Extractor | null {
-  if (lang === "go") return extractGo;
-  if (lang === "ts" || lang === "js") return extractTsJs;
-  if (lang === "py") return extractPy;
-  return null;
+  return EXTRACTOR_MAP[lang] ?? null;
 }
 
 export async function extractFile(file: string, lang: string, source: string, hash: string): Promise<FileFacts> {

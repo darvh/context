@@ -5,7 +5,7 @@ import { rankSymbols } from "../src/query";
 import { assemble } from "../src/assemble";
 import { renderCapsule } from "../src/render";
 import { loadCache } from "../src/cache";
-import { runHook } from "../src/hook";
+import { runHook } from "../src/hooks/user";
 import { changedFiles } from "../src/diff";
 
 const here = import.meta.dir;

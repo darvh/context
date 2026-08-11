@@ -2,14 +2,11 @@ import type { Node } from "../parse";
 import {
   makeId,
   type Confidence,
-  type Edge,
   type EdgeKind,
-  type FileFacts,
-  type Import,
   type Kind,
-  type Span,
   type SymbolFact,
 } from "../facts";
+import { DOC_CLEAN_RE, DOC_LINE_RE, ENTRY_SYMBOL_RULES, FILE_PATTERNS, ROUTE_RULES, SIG_LANG_SPECIAL, SIG_STOPS } from "./rules";
 
 export interface Ctx {
   file: string;
@@ -22,6 +19,9 @@ export interface Ctx {
   imports: Import[];
   byName: Map<string, string[]>; // name -> symbol ids in this file
 }
+
+type Edge = import("../facts").Edge;
+type Import = import("../facts").Import;
 
 const pos = (n: Node) => ({
   sl: n.startPosition.row + 1,
@@ -62,10 +62,10 @@ export function declName(n: Node): string {
  * Python headers end with `:` so take the whole first line. */
 export function signatureOf(n: Node, source: string, lang = "go"): string {
   const text = n.text;
-  if (lang === "py") {
+  if (SIG_LANG_SPECIAL[lang] === "first-line-only") {
     return text.split("\n")[0].trim();
   }
-  for (const stop of ["{", "=>", "->", ":=", ":"]) {
+  for (const stop of SIG_STOPS) {
     const i = text.indexOf(stop);
     if (i >= 0) return text.slice(0, i).replace(/\s+/g, " ").trim();
   }
@@ -77,8 +77,8 @@ export function docAbove(ctx: Ctx, n: Node): string {
   const out: string[] = [];
   for (let i = start - 1; i >= 0 && i >= start - 5; i--) {
     const t = ctx.lines[i].trim();
-    if (/^(\/\/|\/\*|\*|#|"""|'''|--)/.test(t)) {
-      out.unshift(t.replace(/^(\/\/|\*|#|"""?|'''?)\s*/, ""));
+    if (DOC_LINE_RE.test(t)) {
+      out.unshift(t.replace(DOC_CLEAN_RE, ""));
     } else break;
   }
   return out.join(" ").slice(0, 200);
@@ -128,6 +128,54 @@ export function addSym(
 export function refEdge(ctx: Ctx, fromId: string, n: Node, name: string, kind: EdgeKind, conf: Confidence) {
   ctx.edges.push({ from: fromId, to: "", name, kind, conf, at: `${ctx.file}:${n.startPosition.row + 1}` });
   return ctx.edges[ctx.edges.length - 1];
+}
+
+// ---- config-driven helpers (previously hardcoded per extractor) ----
+
+export function classifyFile(file: string, lang: string): { isTest: boolean; isEntry: boolean; isConfig: boolean } {
+  const rules = FILE_PATTERNS[lang] ?? FILE_PATTERNS.rg;
+  const isTest = rules.test.test(file) || (rules.testAlt ? rules.testAlt.test(file) : false);
+  const isEntry = rules.entry.test(file);
+  const isConfig = rules.config.test(file);
+  return { isTest, isEntry, isConfig };
+}
+
+export function getRouteRule(lang: string) {
+  return ROUTE_RULES[lang] ?? null;
+}
+export function isRouteCall(lang: string, method: string, base: string): boolean {
+  const r = getRouteRule(lang);
+  return !!r && r.methods.has(method) && r.bases.has(base);
+}
+
+export function promoteKinds(ctx: Ctx, flags: { isEntry: boolean; isConfig: boolean }) {
+  const rules = ENTRY_SYMBOL_RULES[ctx.lang] ?? ENTRY_SYMBOL_RULES.rg;
+  for (const s of ctx.symbols) {
+    if (flags.isEntry && s.kind === "function" && rules.func?.test(s.name)) s.kind = "entry";
+    if (flags.isEntry && s.kind === "class" && rules.class?.test(s.name)) s.kind = "entry";
+    if (flags.isConfig && rules.configKinds.has(s.kind)) s.kind = "config";
+  }
+}
+
+/** shared call-edge helper: member call => heuristic for property + resolved for qualifier */
+export function addCallEdges(ctx: Ctx, fromId: string, n: Node, target: string, qualifier: string, isMember: boolean) {
+  if (!target) return;
+  if (isMember) {
+    refEdge(ctx, fromId, n, target, "call", "heuristic");
+    if (qualifier) refEdge(ctx, fromId, n, qualifier, "call", "resolved");
+  } else {
+    refEdge(ctx, fromId, n, target, "call", "resolved");
+  }
+}
+
+export function addRouteSymbol(ctx: Ctx, node: Node, object: string, property: string, path: string, toId = "") {
+  const s = addSym(ctx, node, "route", "heuristic", {
+    exported: false,
+    sig: `${object}.${property}(${path})`,
+  });
+  s.name = path;
+  ctx.edges.push({ from: s.id, to: toId, name: path, kind: toId ? "call" : "ref", conf: "heuristic", at: `${ctx.file}:${node.startPosition.row + 1}` });
+  return s;
 }
 
 export interface ExtractResult {

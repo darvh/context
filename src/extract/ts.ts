@@ -1,14 +1,7 @@
 import type { Node } from "../parse";
 import type { Ctx } from "./core";
-import { addSym, childField, refEdge, walk } from "./core";
-
-const ROUTE_METHODS = new Set(["get", "post", "put", "patch", "delete", "options", "use", "route", "all"]);
-const ROUTE_BASES = new Set(["app", "router", "server", "fastify", "route", "handler", "r"]);
-const TEST_FNS = new Set(["it", "test", "describe", "beforeEach", "afterEach", "beforeAll", "afterAll"]);
-
-function isTestFile(f: string) {
-  return /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/.test(f);
-}
+import { addSym, childField, refEdge, walk, classifyFile, promoteKinds, addCallEdges, addRouteSymbol, isRouteCall } from "./core";
+import { TEST_IDENTS } from "./rules";
 
 function isExported(n: Node): boolean {
   let cur: Node | null = n;
@@ -53,19 +46,13 @@ function collectCalls(ctx: Ctx, root: Node, fromId: string, node: Node) {
   } else {
     const m = memberOf(fn);
     if (m) {
-      refEdge(ctx, fromId, node, m.property, "call", "heuristic");
-      if (m.object) refEdge(ctx, fromId, node, m.object, "call", "resolved");
-      if (ROUTE_METHODS.has(m.property) && ROUTE_BASES.has(m.object)) {
+      addCallEdges(ctx, fromId, node, m.property, m.object, true);
+      if (isRouteCall("ts", m.property, m.object)) {
         const firstArg = node.namedChild(1);
         const routePath = firstArg && (firstArg.type === "string" || firstArg.type === "template_string")
           ? firstArg.text.replace(/['"`]/g, "")
           : m.property.toUpperCase();
-        const s = addSym(ctx, node, "route", "heuristic", {
-          exported: false,
-          sig: `${m.object}.${m.property}(${routePath})`,
-        });
-        s.name = routePath;
-        ctx.edges.push({ from: s.id, to: "", name: routePath, kind: "ref", conf: "heuristic", at: `${ctx.file}:${node.startPosition.row + 1}` });
+        addRouteSymbol(ctx, node, m.object, m.property, routePath);
       }
     }
   }
@@ -80,7 +67,6 @@ function collectInherit(ctx: Ctx, classNode: Node, classId: string) {
 }
 
 function collectTestDecl(ctx: Ctx, node: Node, fromId: string) {
-  // it("name", fn) / test("name", fn) / describe("name", fn)
   const fn = node.namedChild(0)?.text ?? "";
   const args = node.namedChild(1);
   const firstArg = args?.namedChild(0);
@@ -96,9 +82,7 @@ function collectTestDecl(ctx: Ctx, node: Node, fromId: string) {
 }
 
 export function extractTsJs(root: Node, ctx: Ctx) {
-  const fileIsTest = isTestFile(ctx.file);
-  const isEntryFile = /(^|\/)(index|main|cli|server)\.(ts|tsx|js|jsx|mjs|cjs)$/.test(ctx.file);
-  const isConfigFile = /(^|\/)(config|settings|env)\.|\.config\./.test(ctx.file);
+  const { isTest: fileIsTest, isEntry: isEntryFile, isConfig: isConfigFile } = classifyFile(ctx.file, ctx.lang);
 
   for (const n of walk(root)) {
     switch (n.type) {
@@ -140,7 +124,6 @@ export function extractTsJs(root: Node, ctx: Ctx) {
       }
       case "interface_declaration":
       case "type_alias_declaration": {
-        const nm = nameNode(n);
         const s = addSym(ctx, n, n.type === "interface_declaration" ? "interface" : "type", "exact", { exported: isExported(n), test: fileIsTest });
         if (n.type === "interface_declaration") collectInherit(ctx, n, s.id);
         break;
@@ -157,7 +140,7 @@ export function extractTsJs(root: Node, ctx: Ctx) {
       case "call_expression": {
         if (n.namedChild(0)?.type === "identifier") {
           const fname = n.namedChild(0)!.text;
-          if (TEST_FNS.has(fname) && fileIsTest) {
+          if (TEST_IDENTS.ts.has(fname) && fileIsTest) {
             collectTestDecl(ctx, n, "");
           }
         }
@@ -166,9 +149,5 @@ export function extractTsJs(root: Node, ctx: Ctx) {
     }
   }
 
-  for (const s of ctx.symbols) {
-    if (isEntryFile && s.kind === "function" && /^(main|cli|server|start)$/.test(s.name)) s.kind = "entry";
-    if (isEntryFile && s.kind === "class" && /^App$|Server/.test(s.name)) s.kind = "entry";
-    if (isConfigFile && (s.kind === "const" || s.kind === "type")) s.kind = "config";
-  }
+  promoteKinds(ctx, { isEntry: isEntryFile, isConfig: isConfigFile });
 }

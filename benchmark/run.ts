@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { build } from "../src/build";
 import { computeMetrics, parseTranscript, capsuleBlock, type MetricRun } from "./metrics";
+import { copyRepoAndPin } from "./repo";
 
 interface Manifest {
   model: {
@@ -15,9 +16,11 @@ interface Manifest {
   tasks: {
     id: string;
     repo: string;
+    revision?: string; // git revision to pin; requires a git repo
     prompt: string;
     golden: string[];
     verify_cmd?: string;
+    setup_cmd?: string; // bootstrap run in the scratch dir before the agent (TB setup scripts)
   }[];
 }
 
@@ -90,13 +93,6 @@ process.on("exit", killAllGroups);
 process.on("SIGINT", () => { killAllGroups(); process.exit(130); });
 process.on("SIGTERM", () => { killAllGroups(); process.exit(143); });
 
-async function copyRepo(repoRel: string, dest: string): Promise<void> {
-  const src = path.resolve(ROOT, repoRel);
-  await fs.rm(dest, { recursive: true, force: true });
-  await fs.mkdir(path.dirname(dest), { recursive: true });
-  await fs.cp(src, dest, { recursive: true });
-}
-
 async function runVerify(cmd: string | undefined, dir: string): Promise<{ status: boolean | null; out: string }> {
   if (!cmd) return { status: null, out: "" };
   try {
@@ -122,7 +118,14 @@ async function runOc(
   const rawFile = path.join(rawDir, `${id}.jsonl`);
   await fs.mkdir(rawDir, { recursive: true });
 
-  await copyRepo(task.repo, scratch);
+  await copyRepoAndPin(task.repo, task.revision, scratch);
+
+  if (task.setup_cmd && !args.dry) {
+    const s = await runVerify(task.setup_cmd, scratch);
+    if (s.status === false) {
+      console.error(`[bench] ${id}: setup failed\n${s.out.slice(0, 800)}`);
+    }
+  }
 
   let prompt = task.prompt;
   let capsuleTokens = 0;
@@ -187,7 +190,7 @@ async function runOc(
   // sidecar for --replay (no model cost)
   await fs.writeFile(
     path.join(rawDir, `${id}.meta.json`),
-    JSON.stringify({ arm, task: task.id, rep, status, capsuleTokens, wallMs, verifyStatus, verifyOutput: verifyOut }),
+    JSON.stringify({ arm, task: task.id, rep, status, revision: task.revision ?? null, capsuleTokens, wallMs, verifyStatus, verifyOutput: verifyOut }),
   );
   return m;
 }
@@ -266,7 +269,7 @@ export async function main(argv: string[]) {
     for (const task of tasks) {
       for (let rep = 1; rep <= reps; rep++) {
         if (args.dry) {
-          console.log(`[dry] ${runId(arm, task.id, rep)} repo=${task.repo} verify=${task.verify_cmd ?? "-"}`);
+          console.log(`[dry] ${runId(arm, task.id, rep)} repo=${task.repo} rev=${task.revision ?? "-"} setup=${task.setup_cmd ?? "-"} verify=${task.verify_cmd ?? "-"}`);
           continue;
         }
         console.log(`[bench] running ${runId(arm, task.id, rep)} ...`);

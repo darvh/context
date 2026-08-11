@@ -1,8 +1,7 @@
 import type { Node } from "../parse";
 import type { Ctx } from "./core";
-import { addSym, childField, refEdge, walk } from "./core";
-
-const isTestFile = (f: string) => /_test\.go$/.test(f);
+import { addSym, childField, refEdge, walk, classifyFile, promoteKinds, addCallEdges } from "./core";
+import { TEST_IDENTS } from "./rules";
 
 function collectTypeSymbols(ctx: Ctx, typeDecl: Node, fileIsTest: boolean) {
   for (let i = 0; i < typeDecl.namedChildCount; i++) {
@@ -21,7 +20,6 @@ function collectTypeSymbols(ctx: Ctx, typeDecl: Node, fileIsTest: boolean) {
       exported: /^[A-Z]/.test(name),
       test: fileIsTest,
     });
-    // nested field methods
     if (value && (value.type === "struct_type" || value.type === "interface_type")) {
       const body = value.namedChildren.find((c) => c.type === "field_declaration_list" || c.type === "type_body");
       if (body) {
@@ -54,13 +52,12 @@ function collectFunction(ctx: Ctx, fn: Node, fileIsTest: boolean) {
   const name = nameNode ? nameNode.text : fn.text.slice(0, 40);
   const isMethod = fn.type === "method_declaration";
   const kind: "function" | "method" = isMethod ? "method" : "function";
-  const isTest = fileIsTest || /^(Test|Benchmark|Example|Fuzz)[A-Z]/.test(name);
+  const isTest = fileIsTest || (TEST_IDENTS.go as RegExp).test(name);
   const s = addSym(ctx, fn, kind, "exact", {
     exported: /^[A-Z]/.test(name),
     test: isTest,
   });
   collectCalls(ctx, fn, s.id);
-  // interface implementation: receiver field of method carries type name
   if (isMethod) {
     const recv = childField(fn, "receiver");
     if (recv) {
@@ -71,7 +68,6 @@ function collectFunction(ctx: Ctx, fn: Node, fileIsTest: boolean) {
     }
   }
   if (isTest) {
-    // references to production symbols inside test body
     collectNameUses(ctx, fn, s.id, "test", "resolved");
   }
 }
@@ -87,8 +83,7 @@ function collectCalls(ctx: Ctx, root: Node, fromId: string) {
       const sel = fn.namedChildren.filter((c) => c.type === "identifier" || c.type === "field_identifier");
       const qual = sel[0]?.text ?? "";
       const mem = sel[1]?.text ?? "";
-      refEdge(ctx, fromId, n, mem || fn.text, "call", "heuristic");
-      if (qual) refEdge(ctx, fromId, n, qual, "call", "resolved");
+      addCallEdges(ctx, fromId, n, mem || fn.text, qual, true);
     }
   }
 }
@@ -107,9 +102,7 @@ function collectNameUses(ctx: Ctx, root: Node, fromId: string, kind: "ref" | "te
 }
 
 export function extractGo(root: Node, ctx: Ctx) {
-  const fileIsTest = isTestFile(ctx.file);
-  const isEntryFile = /(^|\/)(main\.go|cmd\/)/.test(ctx.file);
-  const isConfigFile = /config|settings|env/i.test(ctx.file);
+  const { isTest: fileIsTest, isEntry, isConfig } = classifyFile(ctx.file, ctx.lang);
 
   for (const n of walk(root)) {
     switch (n.type) {
@@ -153,8 +146,5 @@ export function extractGo(root: Node, ctx: Ctx) {
     }
   }
 
-  for (const s of ctx.symbols) {
-    if (isEntryFile && s.kind === "function" && s.name === "main") s.kind = "entry";
-    if (isConfigFile && s.kind === "const") s.kind = "config";
-  }
+  promoteKinds(ctx, { isEntry, isConfig });
 }

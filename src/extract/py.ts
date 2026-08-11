@@ -1,13 +1,7 @@
 import type { Node } from "../parse";
 import type { Ctx } from "./core";
-import { addSym, childField, refEdge, walk } from "./core";
-
-const ROUTE_METHODS = new Set(["get", "post", "put", "patch", "delete", "options", "route"]);
-const ROUTE_BASES = new Set(["app", "bp", "blueprint", "router"]);
-
-function isTestFile(f: string) {
-  return /(^|\/)test_.*\.py$|(^|\/)tests?\//.test(f);
-}
+import { addSym, childField, refEdge, walk, classifyFile, promoteKinds, addCallEdges, isRouteCall } from "./core";
+import { TEST_IDENTS } from "./rules";
 
 function nameField(n: Node): Node | null {
   return childField(n, "name");
@@ -30,19 +24,12 @@ function collectCalls(ctx: Ctx, root: Node, fromId: string) {
     if (n.type !== "call") continue;
     const t = callTarget(n);
     if (!t.name) continue;
-    if (t.isMember) {
-      refEdge(ctx, fromId, n, t.name, "call", "heuristic");
-      if (t.qualifier) refEdge(ctx, fromId, n, t.qualifier, "call", "resolved");
-    } else {
-      refEdge(ctx, fromId, n, t.name, "call", "resolved");
-    }
+    addCallEdges(ctx, fromId, n, t.name, t.qualifier, t.isMember);
   }
 }
 
 export function extractPy(root: Node, ctx: Ctx) {
-  const fileIsTest = isTestFile(ctx.file);
-  const isEntryFile = /(^|\/)(main|__main__|cli)\.py$/.test(ctx.file) || /(^|\/)cmd\//.test(ctx.file);
-  const isConfigFile = /config|settings|env/i.test(ctx.file);
+  const { isTest: fileIsTest, isEntry, isConfig } = classifyFile(ctx.file, ctx.lang);
 
   const handleDecorators = (defNode: Node, targetId: string): Node | undefined => {
     for (const dec of defNode.namedChildren.filter((c) => c.type === "decorator")) {
@@ -50,7 +37,7 @@ export function extractPy(root: Node, ctx: Ctx) {
       if (inner && inner.type === "attribute") {
         const attr = inner.namedChild(inner.namedChildCount - 1);
         const obj = inner.namedChild(0);
-        if (attr && ROUTE_METHODS.has(attr.text) && obj && ROUTE_BASES.has(obj.text)) {
+        if (attr && obj && isRouteCall("py", attr.text, obj.text)) {
           const arg = dec.namedChildren.find((c) => c.type === "string");
           const routePath = arg ? arg.text.replace(/['"]/g, "") : attr.text.toUpperCase();
           const s = addSym(ctx, dec, "route", "heuristic", { sig: `${obj.text}.${attr.text}(${routePath})` });
@@ -66,7 +53,7 @@ export function extractPy(root: Node, ctx: Ctx) {
   const handleDef = (n: Node, kind: "function" | "class") => {
     const nm = nameField(n);
     const name = nm ? nm.text : "anon";
-    const isTest = fileIsTest || (kind === "function" && name.startsWith("test_")) || (kind === "class" && name.startsWith("Test"));
+    const isTest = fileIsTest || (kind === "function" && name.startsWith(TEST_IDENTS.py.funcPrefix)) || (kind === "class" && name.startsWith(TEST_IDENTS.py.classPrefix));
     const s = addSym(ctx, n, kind, "exact", {
       exported: name[0] !== "_",
       test: isTest,
@@ -74,7 +61,6 @@ export function extractPy(root: Node, ctx: Ctx) {
     if (kind === "function") {
       collectCalls(ctx, n, s.id);
     } else {
-      // base classes
       const sup = n.namedChildren.filter((c) => c.type === "identifier" || c.type === "attribute");
       for (const b of sup) {
         ctx.edges.push({ from: s.id, to: "", name: b.text.split(".").pop()!, kind: "inherit", conf: "resolved", at: `${ctx.file}:${b.startPosition.row + 1}` });
@@ -83,7 +69,7 @@ export function extractPy(root: Node, ctx: Ctx) {
         if (c.type === "function_definition" && c.parent !== n) {
           const mnm = nameField(c);
           const mname = mnm ? mnm.text : "m";
-          const m = addSym(ctx, c, "method", "exact", { test: mname.startsWith("test_") });
+          const m = addSym(ctx, c, "method", "exact", { test: mname.startsWith(TEST_IDENTS.py.funcPrefix) });
           collectCalls(ctx, c, m.id);
           ctx.edges.push({ from: s.id, to: m.id, name: mname, kind: "contain", conf: "exact", at: `${ctx.file}:${c.startPosition.row + 1}` });
         }
@@ -96,7 +82,7 @@ export function extractPy(root: Node, ctx: Ctx) {
   for (const n of walk(root)) {
     switch (n.type) {
       case "function_definition":
-        if (n.parent && n.parent.type === "class_definition") break; // handled by class pass
+        if (n.parent && n.parent.type === "class_definition") break;
         handleDef(n, "function");
         break;
       case "class_definition":
@@ -126,10 +112,7 @@ export function extractPy(root: Node, ctx: Ctx) {
     }
   }
 
-  for (const s of ctx.symbols) {
-    if (isEntryFile && s.kind === "function" && /^(main|cli)$/.test(s.name)) s.kind = "entry";
-    if (isConfigFile && (s.kind === "const" || s.kind === "var")) s.kind = "config";
-  }
+  promoteKinds(ctx, { isEntry, isConfig });
 }
 
 function collectTestUses(ctx: Ctx, root: Node, fromId: string) {
