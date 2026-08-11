@@ -6,8 +6,9 @@ const CSV_HEADER = [
   "arm", "task", "rep", "status", "success", "edited_golden",
   "first_relevant_ms", "first_relevant_file", "first_edit_ms",
   "exploration_before_first_edit", "first_relevant_calls", "input_before_first_relevant",
-  "input_tokens", "output_tokens", "cache_tokens", "total_tokens",
-  "cost_usd", "wall_ms", "capsule_tokens", "failure_category",
+  "input_tokens", "output_tokens", "cache_tokens", "input_miss_tokens", "cache_hit_pct",
+  "total_tokens", "cost_usd",
+  "wall_ms", "capsule_tokens", "failure_category",
 ];
 
 function csvRow(r: MetricRun): string[] {
@@ -15,8 +16,9 @@ function csvRow(r: MetricRun): string[] {
     r.arm, r.task, String(r.rep), r.status, r.success === null ? "" : String(r.success), String(r.editedGolden),
     r.firstRelevantMs === null ? "" : String(r.firstRelevantMs), r.firstRelevantFile ?? "", r.firstEditMs === null ? "" : String(r.firstEditMs),
     String(r.explorationBeforeFirstEdit), String(r.firstRelevantCalls), String(r.inputTokensBeforeFirstRelevant),
-    String(r.inputTokens), String(r.outputTokens), String(r.cacheReadTokens), String(r.totalTokens),
-    r.costUsd.toFixed(6), String(r.wallMs), String(r.capsuleTokens), r.failureCategory,
+    String(r.inputTokens), String(r.outputTokens), String(r.cacheReadTokens), String(r.inputMissTokens), r.cacheHitPct.toFixed(1),
+    String(r.totalTokens), r.costUsd.toFixed(6),
+    String(r.wallMs), String(r.capsuleTokens), r.failureCategory,
   ];
 }
 
@@ -27,7 +29,7 @@ const med = (xs: number[]): number | null => {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 };
 
-export async function writeReport(runs: MetricRun[], outDir: string, manifest: { model: { id: string; usage_multiplier: number } }): Promise<void> {
+export async function writeReport(runs: MetricRun[], outDir: string, manifest: { model: { id: string; usage_multiplier: number; pricing?: { input_miss_per_1m?: number; input_hit_per_1m?: number; output_per_1m?: number } } }): Promise<void> {
   // results.csv
   const rows = [CSV_HEADER.join(",")];
   for (const r of runs) rows.push(csvRow(r).join(","));
@@ -39,7 +41,12 @@ export async function writeReport(runs: MetricRun[], outDir: string, manifest: {
   const lines: string[] = [];
   lines.push(`# Context benchmark summary`);
   lines.push("");
-  lines.push(`Model: \`${manifest.model.id}\` — usage multiplier ${manifest.model.usage_multiplier}x (deepseek-v4-flash billing).`);
+  lines.push(`Model: \`${manifest.model.id}\` — usage multiplier ${manifest.model.usage_multiplier}x on reported tokens.`);
+  const p = manifest.model.pricing;
+  lines.push(
+    `Cost = true API pricing: input cache-miss $${p?.input_miss_per_1m ?? 0}/1M, cache-hit $${p?.input_hit_per_1m ?? 0}/1M (98% off), ` +
+    `output $${p?.output_per_1m ?? 0}/1M, no cache-write fee. Computed from provider raw tokens.`,
+  );
   lines.push(`Token and cost figures below are already multiplied. Token totals are provider-reported via \`step_finish\`.`);
   lines.push("");
   lines.push(`| metric | ` + [...byArm.keys()].map((a) => a).join(" | ") + ` |`);
@@ -53,6 +60,7 @@ export async function writeReport(runs: MetricRun[], outDir: string, manifest: {
   metric("exploration calls before first edit (median)", (rs) => med(rs.map((r) => r.explorationBeforeFirstEdit)) ?? "-");
   metric("input tokens before first relevant (median)", (rs) => "-"); // not captured per-run
   metric("total input tokens (median)", (rs) => med(rs.map((r) => r.inputTokens)) ?? "-");
+  metric("cache hit % (median)", (rs) => med(rs.map((r) => r.cacheHitPct))?.toFixed(1) ?? "-");
   metric("total tokens (median)", (rs) => med(rs.map((r) => r.totalTokens)) ?? "-");
   metric("cost USD (sum)", (rs) => rs.reduce((a, r) => a + r.costUsd, 0).toFixed(4));
   lines.push("");

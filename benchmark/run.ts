@@ -11,6 +11,7 @@ interface Manifest {
     timeout_seconds: number;
     permission: string;
     reps: number;
+    pricing: { input_miss_per_1m: number; input_hit_per_1m: number; output_per_1m: number; cache_write_fee_per_1m?: number };
   };
   arms: Record<string, { label: string; enabled: boolean }>;
   tasks: {
@@ -221,7 +222,8 @@ async function replay(args: CliArgs, manifest: Manifest): Promise<MetricRun[]> {
         const m = computeMetrics(tr, {
           goldenFiles,
           runStart: tr.firstTs || 0,
-          usageMultiplier: manifest.model.usage_multiplier,
+    usageMultiplier: manifest.model.usage_multiplier,
+    pricing: manifest.model.pricing,
         }, {
           capsuleTokens: meta?.capsuleTokens ?? 0,
           wallMs: meta?.wallMs ?? 0,

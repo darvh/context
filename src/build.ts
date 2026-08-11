@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { scan } from "./scan";
-import { langFor } from "./lang";
+import { langFor, rgLangFor } from "./lang";
 import { extractFile } from "./extract";
 import { resolveFacts } from "./resolve";
 import { loadCache, writeCache, repoKey, CACHE_VERSION } from "./cache";
@@ -51,7 +51,7 @@ export async function build(cwd: string): Promise<BuildResult> {
   for (const k of Object.keys(manifest)) if (manifest[k] !== cached?.manifest[k]) changed.add(k);
   for (const k of Object.keys(cached?.manifest ?? {})) if (!(k in manifest)) changed.add(k);
 
-  const toParse = s.files.filter((f) => changed.has(f) && langFor(f) && manifest[f]);
+  const toParse = s.files.filter((f) => changed.has(f) && (langFor(f) || rgLangFor(f)) && manifest[f]);
 
   const fileFacts = new Map<string, FileFacts>();
   if (cached) {
@@ -64,9 +64,11 @@ export async function build(cwd: string): Promise<BuildResult> {
   if (toParse.length) {
     const t1 = performance.now();
     const results = await mapLimit(toParse, CONCURRENCY, async (f) => {
-      const lang = langFor(f)!;
+      const lang = langFor(f);
+      const rg = lang ? null : rgLangFor(f);
+      const langName = lang?.name ?? rg ?? "rg";
       const source = await fs.readFile(path.join(s.tree, f), "utf8");
-      return extractFile(f, lang.name, source, manifest[f]);
+      return extractFile(f, langName, source, manifest[f]);
     });
     for (const ff of results) fileFacts.set(ff.file, ff);
     parseMs = performance.now() - t1;

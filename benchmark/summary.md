@@ -1,6 +1,7 @@
 # Context benchmark summary
 
-Model: `opencode-go/deepseek-v4-flash` — usage multiplier 2x (deepseek-v4-flash billing).
+Model: `opencode-go/deepseek-v4-flash` — usage multiplier 2x on reported tokens.
+Cost = true API pricing: input cache-miss $0.14/1M, cache-hit $0.0028/1M (98% off), output $0.28/1M, no cache-write fee. Computed from provider raw tokens.
 Token and cost figures below are already multiplied. Token totals are provider-reported via `step_finish`.
 
 | metric | cold | context |
@@ -11,9 +12,10 @@ Token and cost figures below are already multiplied. Token totals are provider-r
 | time to first edit (ms, median) | 28651.5 | 12192 |
 | exploration calls before first edit (median) | 7 | 4 |
 | input tokens before first relevant (median) | - | - |
-| total input tokens (median) | 25282 | 25801 |
+| total input tokens (median) | 340418 | 176329 |
+| cache hit % (median) | 92.3 | 84.9 |
 | total tokens (median) | 343622 | 178386 |
-| cost USD (sum) | 0.0115 | 0.0095 |
+| cost USD (sum) | 0.0220 | 0.0186 |
 
 ## Net savings vs cold (per task, median)
 
@@ -24,14 +26,14 @@ net_pct       = net_savings / cold_input
 ```
 
 ### sess-ts
-- gross_input_savings: -242 (-1.0%)
-- net_savings (after capsule): -612 (-2.4%)
+- gross_input_savings: 93326 (41.6%)
+- net_savings (after capsule): 92956 (41.5%)
 - exploration calls saved: 2.5
 - success preserved: yes
 
 ### sess-go
-- gross_input_savings: -64 (-0.2%)
-- net_savings (after capsule): -372 (-1.4%)
+- gross_input_savings: 245824 (50.6%)
+- net_savings (after capsule): 245516 (50.5%)
 - exploration calls saved: 4.5
 - success preserved: yes
 

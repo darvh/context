@@ -10,10 +10,19 @@
 
 model:
   id: opencode-go/deepseek-v4-flash
-  usage_multiplier: 2 # deepseek-v4-flash is billed at 2x usage; applied to token + cost accounting
+  usage_multiplier: 2 # billed at 2x usage; applied to reported token counts
   timeout_seconds: 600
   permission: auto # auto-approve tool permissions (scripted, disposable fixtures)
   reps: 2
+  # True cost schedule — DeepSeek V4 Flash (per 1M tokens):
+  #   input cache miss $0.14, input cache hit $0.0028 (98% off), no cache-write fee.
+  #   OUTPUT price is not in the stated schedule; adjust output_per_1m to the
+  #   actual rate before publishing costs.
+  pricing:
+    input_miss_per_1m: 0.14
+    input_hit_per_1m: 0.0028
+    output_per_1m: 0.28
+    cache_write_fee_per_1m: 0.0
 
 arms:
   cold:

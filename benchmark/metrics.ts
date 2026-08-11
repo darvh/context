@@ -1,12 +1,12 @@
-import type { BuildResult } from "../src/build";
-import { rankSymbols, explicitFilesFromTask } from "../src/query";
-import { assemble, type Capsule } from "../src/assemble";
+import { assemble, type Capsule } from '../src/assemble';
+import type { BuildResult } from '../src/build';
+import { explicitFilesFromTask, rankSymbols } from '../src/query';
 
 export interface MetricRun {
   arm: string;
   task: string;
   rep: number;
-  status: "ok" | "timeout" | "error";
+  status: 'ok' | 'timeout' | 'error';
   success: boolean | null; // verify_cmd result, null when no verify
   editedGolden: boolean;
   firstRelevantMs: number | null;
@@ -18,8 +18,10 @@ export interface MetricRun {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
+  inputMissTokens: number; // input minus cache-hit portion (billed at miss price)
+  cacheHitPct: number; // cacheRead / input
   totalTokens: number;
-  costUsd: number;
+  costUsd: number; // true cost from pricing schedule
   wallMs: number;
   capsuleTokens: number;
   rawTokensInput: number;
@@ -33,6 +35,13 @@ export interface ParseCtx {
   goldenFiles: Set<string>;
   runStart: number; // epoch ms of run start
   usageMultiplier: number;
+  /** True per-1M-token pricing; cost = pricing applied to raw tokens. */
+  pricing: {
+    input_miss_per_1m: number;
+    input_hit_per_1m: number;
+    output_per_1m: number;
+    cache_write_fee_per_1m?: number;
+  };
 }
 
 interface Step {
@@ -60,21 +69,21 @@ export function parseTranscript(lines: string[]): Transcript {
     }
     const ts = e.timestamp ?? 0;
     if (!t.firstTs) t.firstTs = ts;
-    if (e.type === "tool_use" && e.part) {
+    if (e.type === 'tool_use' && e.part) {
       const state = e.part.state ?? {};
       t.toolUses.push({
         ts,
-        tool: e.part.tool ?? "",
+        tool: e.part.tool ?? '',
         input: JSON.stringify(state.input ?? {}),
-        output: typeof state.output === "string" ? state.output : JSON.stringify(state.output ?? ""),
+        output: typeof state.output === 'string' ? state.output : JSON.stringify(state.output ?? '')
       });
-    } else if (e.type === "text" && e.part) {
-      t.texts.push({ ts, text: e.part.text ?? "" });
-    } else if (e.type === "step_finish" && e.part) {
+    } else if (e.type === 'text' && e.part) {
+      t.texts.push({ ts, text: e.part.text ?? '' });
+    } else if (e.type === 'step_finish' && e.part) {
       t.steps.push({
         ts,
         tokens: e.part.tokens,
-        cost: e.part.cost,
+        cost: e.part.cost
       });
     }
   }
@@ -91,9 +100,15 @@ function mentionsGolden(s: string, goldenFiles: Set<string>): string | null {
 export function computeMetrics(
   t: Transcript,
   ctx: ParseCtx,
-  extras: { capsuleTokens: number; wallMs: number; editedGolden: boolean; verifyStatus: boolean | null; verifyOutput: string },
+  extras: {
+    capsuleTokens: number;
+    wallMs: number;
+    editedGolden: boolean;
+    verifyStatus: boolean | null;
+    verifyOutput: string;
+  }
 ): MetricRun {
-  const { goldenFiles, runStart, usageMultiplier } = ctx;
+  const { goldenFiles, runStart, usageMultiplier, pricing } = ctx;
   const m = usageMultiplier;
 
   let firstRelevantMs: number | null = null;
@@ -105,9 +120,10 @@ export function computeMetrics(
 
   // exploration + first relevant (tool outputs mentioning a golden file)
   for (const tu of t.toolUses) {
-    if (firstEditMs === null && (tu.tool === "edit" || tu.tool === "write")) {
+    if (firstEditMs === null && (tu.tool === 'edit' || tu.tool === 'write')) {
       firstEditMs = tu.ts - runStart;
-      if (tu.input.includes("filePath") && mentionsGolden(tu.input, goldenFiles)) editedGolden = true;
+      if (tu.input.includes('filePath') && mentionsGolden(tu.input, goldenFiles))
+        editedGolden = true;
       break; // exploration before first edit only counts pre-edit calls
     }
     explorationBeforeFirstEdit++;
@@ -143,19 +159,30 @@ export function computeMetrics(
       rawOutput += s.tokens.output ?? 0;
       cacheRead += s.tokens.cache?.read ?? 0;
       if (firstRelevantMs !== null && s.ts - runStart <= firstRelevantMs) {
-        inputBeforeFirstRelevant += s.tokens.input ?? 0;
+        inputBeforeFirstRelevant += (s.tokens.input ?? 0) + (s.tokens.cache?.read ?? 0);
       }
     }
     rawCost += s.cost ?? 0;
   }
 
-  const totalTokens = (rawInput + rawOutput + cacheRead) * m;
+  // provider `tokens.input` = cache-MISS input; `cache.read` = cache-hit input;
+  // total = input + cache.read + output (verified against step_finish totals).
+  const totalInput = rawInput + cacheRead;
+  const totalTokens = (totalInput + rawOutput) * m;
+
+  // True cost from the pricing schedule: cache-hit input at the discounted
+  // rate, cache misses at the full input rate, output at the output rate.
+  // No cache-write fee (DeepSeek V4 Flash). Applied to provider raw tokens.
+  const inputCost =
+    (rawInput * (pricing.input_miss_per_1m ?? 0) + cacheRead * (pricing.input_hit_per_1m ?? 0)) / 1e6;
+  const outputCost = (rawOutput * (pricing.output_per_1m ?? 0)) / 1e6;
+  const cacheHitPct = totalInput > 0 ? (cacheRead / totalInput) * 100 : 0;
 
   return {
-    arm: "",
-    task: "",
+    arm: '',
+    task: '',
     rep: 0,
-    status: "ok",
+    status: 'ok',
     success: extras.verifyStatus,
     editedGolden,
     firstRelevantMs,
@@ -164,18 +191,26 @@ export function computeMetrics(
     explorationBeforeFirstEdit,
     firstRelevantCalls,
     inputTokensBeforeFirstRelevant: inputBeforeFirstRelevant * m,
-    inputTokens: rawInput * m,
+    inputTokens: totalInput * m,
     outputTokens: rawOutput * m,
     cacheReadTokens: cacheRead * m,
+    inputMissTokens: rawInput * m,
+    cacheHitPct,
     totalTokens,
-    costUsd: rawCost * m,
+    costUsd: (inputCost + outputCost) * m,
     wallMs: extras.wallMs,
     capsuleTokens: extras.capsuleTokens,
     rawTokensInput: rawInput,
     rawTokensOutput: rawOutput,
     rawCostUsd: rawCost,
-    failureCategory: classify(rawInput === 0, firstRelevantMs, firstEditMs, extras.verifyStatus, editedGolden),
-    verifyOutput: extras.verifyOutput.slice(0, 2000),
+    failureCategory: classify(
+      rawInput === 0,
+      firstRelevantMs,
+      firstEditMs,
+      extras.verifyStatus,
+      editedGolden
+    ),
+    verifyOutput: extras.verifyOutput.slice(0, 2000)
   };
 }
 
@@ -184,18 +219,21 @@ export function classify(
   firstRelevantMs: number | null,
   firstEditMs: number | null,
   verifyStatus: boolean | null,
-  editedGolden: boolean,
+  editedGolden: boolean
 ): string {
-  if (noSteps) return "environment";
-  if (firstRelevantMs === null) return "navigation";
-  if (firstEditMs === null) return "implementation-start";
-  if (verifyStatus === false && editedGolden) return "implementation-or-tests";
-  if (verifyStatus === false) return "implementation";
-  return "success";
+  if (noSteps) return 'environment';
+  if (firstRelevantMs === null) return 'navigation';
+  if (firstEditMs === null) return 'implementation-start';
+  if (verifyStatus === false && editedGolden) return 'implementation-or-tests';
+  if (verifyStatus === false) return 'implementation';
+  return 'success';
 }
 
 /** Build the Context capsule block for arm B, prepended to the prompt. */
-export async function capsuleBlock(b: BuildResult, task: string): Promise<{ block: string; tokens: number }> {
+export async function capsuleBlock(
+  b: BuildResult,
+  task: string
+): Promise<{ block: string; tokens: number }> {
   const changed = new Set<string>();
   const explicitFiles = explicitFilesFromTask(task, b.files);
   const hits = rankSymbols({ task, graph: b.graph, changed, explicitFiles });
@@ -212,8 +250,8 @@ export async function capsuleBlock(b: BuildResult, task: string): Promise<{ bloc
   }
   if (capsule.truncated) lines.push(`(truncated)`);
   lines.push(`prefer these locations; expand with \`context expand <handle>\` if needed`);
-  const block = lines.join("\n");
+  const block = lines.join('\n');
   return { block, tokens: capsule.tokensUsed };
 }
 
-export const fmt = (n: number | null) => (n === null ? "" : String(n));
+export const fmt = (n: number | null) => (n === null ? '' : String(n));

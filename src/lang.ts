@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-export type LangName = 'go' | 'ts' | 'js' | 'py';
+export type LangName = 'go' | 'ts' | 'js' | 'py' | 'java' | 'rb' | 'rs' | 'c' | 'cpp' | 'cs' | 'php' | 'sh' | 'kt' | 'swift';
 
 export interface LangConf {
   name: LangName;
@@ -34,7 +34,18 @@ export const LANGS: LangConf[] = [
     exts: ['.js', '.jsx', '.mjs', '.cjs'],
     wasm: DIR + 'tree-sitter-javascript/tree-sitter-javascript.wasm'
   },
-  { name: 'py', exts: ['.py'], wasm: DIR + 'tree-sitter-python/tree-sitter-python.wasm' }
+  { name: 'py', exts: ['.py'], wasm: DIR + 'tree-sitter-python/tree-sitter-python.wasm' },
+  // new langs: rg fallback today, AST tomorrow — just add entry to maps in rules.ts, no code change
+  { name: 'java', exts: ['.java'], wasm: DIR + 'tree-sitter-java/tree-sitter-java.wasm' },
+  { name: 'rb', exts: ['.rb'], wasm: DIR + 'tree-sitter-ruby/tree-sitter-ruby.wasm' },
+  { name: 'rs', exts: ['.rs'], wasm: DIR + 'tree-sitter-rust/tree-sitter-rust.wasm' },
+  { name: 'c', exts: ['.c', '.h'], wasm: DIR + 'tree-sitter-c/tree-sitter-c.wasm' },
+  { name: 'cpp', exts: ['.cpp', '.hpp', '.cc', '.hh'], wasm: DIR + 'tree-sitter-cpp/tree-sitter-cpp.wasm' },
+  { name: 'cs', exts: ['.cs'], wasm: DIR + 'tree-sitter-c-sharp/tree-sitter-c-sharp.wasm' },
+  { name: 'php', exts: ['.php'], wasm: DIR + 'tree-sitter-php/tree-sitter-php.wasm' },
+  { name: 'sh', exts: ['.sh', '.bash', '.zsh'], wasm: DIR + 'tree-sitter-bash/tree-sitter-bash.wasm' },
+  { name: 'kt', exts: ['.kt', '.kts'], wasm: DIR + 'tree-sitter-kotlin/tree-sitter-kotlin.wasm' },
+  { name: 'swift', exts: ['.swift'], wasm: DIR + 'tree-sitter-swift/tree-sitter-swift.wasm' },
 ];
 
 export function langFor(path: string): LangConf | undefined {
@@ -44,24 +55,9 @@ export function langFor(path: string): LangConf | undefined {
   return LANGS.find((l) => l.exts.includes(ext));
 }
 
-// Source extensions with no tree-sitter grammar: get the rg-level fallback
-// extractor instead of no facts at all.
+// Source extensions with no tree-sitter grammar yet: rg-level fallback extractor.
+// Once a wasm grammar is added to LANGS, remove its ext from here.
 const RG_EXTS = new Set([
-  '.rb',
-  '.java',
-  '.rs',
-  '.php',
-  '.c',
-  '.h',
-  '.cpp',
-  '.hpp',
-  '.cs',
-  '.kt',
-  '.kts',
-  '.swift',
-  '.sh',
-  '.bash',
-  '.zsh',
   '.lua',
   '.r',
   '.scala',
@@ -71,7 +67,10 @@ const RG_EXTS = new Set([
   '.erl',
   '.hrl',
   '.m',
-  '.mm'
+  '.mm',
+  // keep a few still without wasm but useful via rg
+  '.pl',
+  '.pm',
 ]);
 
 export function rgLangFor(path: string): string | null {

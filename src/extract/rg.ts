@@ -26,15 +26,22 @@ function matchName(line: string, re: RegExp): string | null {
   return m ? m[1] : null;
 }
 
-export function extractRg(ctx: Ctx): void {
-  const { isTest: isTestFile, isEntry, isConfig } = classifyFile(ctx.file, "rg");
+const SKIP_START = /^(if|for|while|switch|catch|return|elif|else)\b/;
 
-  const declList = [RG_DECL.fn, RG_DECL.class, RG_DECL.type, RG_DECL.const];
+export function extractRg(ctx: Ctx): void {
+  // use lang-specific patterns if available (java, rb, rs, etc), fallback to generic rg
+  const { isTest: isTestFile, isEntry, isConfig } = classifyFile(ctx.file, ctx.lang);
+
+  const declList = [RG_DECL.fn, RG_DECL.class, RG_DECL.type, RG_DECL.const, RG_DECL.phpClass, RG_DECL.cFunc, RG_DECL.shFunc];
 
   for (let i = 0; i < ctx.lines.length; i++) {
     const line = ctx.lines[i];
-    const trimmed = line.trim();
+    let trimmed = line.trim();
+    if (!trimmed) continue;
+    // strip php opening tag for class detection
+    if (trimmed.startsWith("<?php")) trimmed = trimmed.replace(/^<\?php\s*/, "");
     if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith("#") || trimmed.startsWith("/*") || trimmed.startsWith("*")) continue;
+    if (SKIP_START.test(trimmed)) continue;
 
     const isTest = isTestFile || /^(test|spec|Test)/.test(trimmed);
     const name = declList.reduce<string | null>((acc, re) => acc ?? matchName(trimmed, re), null);
