@@ -57,7 +57,7 @@ describe("structural extraction", () => {
   });
 
   test("python: module, class, test detection", async () => {
-    const b = await build(PY);
+    const b = await buildFresh(PY);
     const names = b.graph.symbols.map((s) => `${s.kind}:${s.name}`);
     expect(names).toContain("function:open_store");
     expect(names).toContain("class:Store");
