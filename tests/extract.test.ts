@@ -66,6 +66,26 @@ describe("structural extraction", () => {
     expect(store.sig).toContain("def open_store");
   });
 
+  test("rg fallback: multilang symbol extraction", async () => {
+    const b = await buildFresh(ML);
+    const names = b.graph.symbols.map((s) => `${s.kind}:${s.name}`);
+    const expectHas = (n: string) => expect(names, n).toContain(n);
+    expectHas("entry:Main");      // java
+    expectHas("import:List");     // java import
+    expectHas("class:MyClass");   // ruby
+    expectHas("entry:main");      // rust
+    expectHas("class:App");       // php
+    expectHas("entry:main");      // c
+    expectHas("class:MyClass");   // cpp
+    expectHas("entry:Program");   // csharp
+    expectHas("entry:App");       // kotlin
+    expectHas("entry:main");      // swift
+    expectHas("entry:main");      // sh
+    expectHas("function:myfunc"); // lua
+    expectHas("entry:Main");      // scala
+    expectHas("class:MyClass");   // dart
+  });
+
   test("no repo mutation: cache lives outside the tree", async () => {
     const b = await build(GO);
     const { readdir } = await import("node:fs/promises");

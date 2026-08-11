@@ -17,6 +17,22 @@ fixture contract (`proof/bench` Task record) plus the `proof` binary as the
 verification oracle. Context stays runnable without proof; the combined arm
 only exists when `proof` is present.
 
+## Obligation derivation — benchmark vs production
+
+- **Benchmark: LLM-only.** Obligations are derived from the task intent by
+  the same model doing the work. This is the worst case for circularity
+  (self-derived obligations can miss the same thing twice) and deliberately
+  so — the benchmark is a conservative floor.
+- **Production: human + LLM, ~20/80.** The human anchors the 20%: intent,
+  policy, and the obligation classes that matter. The LLM operationalizes the
+  80%: turning those anchors into concrete obligations, collecting evidence,
+  and reporting disposition.
+- Consequence: if the combined arm passes with LLM-only derivation, the
+  human+LLM path is expected to be at least as strong on derivation quality.
+  A measured helps-signal in the bench is a lower bound on real-world value,
+  not a ceiling — and a weak bench result isolates a real derivation gap the
+  human anchor would need to close.
+
 ## Sequencing — what "all done" means before the combined arm
 
 Phase A (this repo, no proof):
@@ -51,6 +67,9 @@ arm context+proof:
 
 - The agent sees the discovery surface (capsule) and the obligations
   (packet). It cannot see hidden tests; those are proof's job.
+- Obligations in the bench are **LLM-derived from the task intent** (the
+  conservative floor; production is human+LLM 20/80 — see above). The packet
+  is not authored with the answer; hidden tests are the only oracle.
 - The question this arm answers: does adding the obligation layer raise
   verified task success versus capsule-only, and does it survive the
   can-hurt class (overhead > benefit)?
