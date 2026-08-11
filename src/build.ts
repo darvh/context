@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { scan } from "./scan";
+import { scan, type ScanOpts } from "./scan";
 import { langFor, rgLangFor } from "./lang";
 import { extractFile } from "./extract";
 import { resolveFacts } from "./resolve";
@@ -41,9 +41,9 @@ async function mapLimit<T, R>(items: T[], n: number, fn: (x: T) => Promise<R>): 
   return out;
 }
 
-export async function build(cwd: string): Promise<BuildResult> {
+export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResult> {
   const t0 = performance.now();
-  const s = await scan(cwd);
+  const s = await scan(cwd, opts);
   const cached = await loadCache(s.tree);
 
   const manifest = s.manifest;

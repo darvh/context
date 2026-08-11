@@ -8,16 +8,23 @@ import { impact, renderImpact, type ImpactReport } from "./impact";
 import { changedFiles } from "./diff";
 import { lastCapsulePath, writeJson } from "./cache";
 import { estTokens } from "./tokens";
+import type { ScanOpts } from "./scan";
 
 const HELP = `context — deterministic discovery compiler
 
 usage:
   context prepare "<task>" [--budget N] [--json] [--root DIR]
+               [--ignore pat[,pat]] [--no-gitignore]
   context expand <handle|file:line> [--root DIR]
   context impact <symbol|--diff> [--json] [--root DIR]
+               [--ignore pat[,pat]] [--no-gitignore]
   context init [--targets all|opencode,claude-code,codex,cursor,copilot,antigravity]
                [--project] [--force] [--dry-run] [--hooks]
   context --help
+
+ignore override:
+  --ignore "a,b"   add extra ignore globs (on top of .gitignore + defaults)
+  --no-gitignore   do not read .gitignore files (default ignores still apply)
 `;
 
 interface Args {
@@ -25,10 +32,11 @@ interface Args {
   budget: number;
   json: boolean;
   rest: string[];
+  scan: ScanOpts;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { root: process.cwd(), budget: 1200, json: false, rest: [] };
+  const args: Args = { root: process.cwd(), budget: 1200, json: false, rest: [], scan: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--budget") args.budget = Number(argv[++i]) || 1200;
@@ -36,6 +44,9 @@ function parseArgs(argv: string[]): Args {
     else if (a === "--root") args.root = path.resolve(argv[++i]);
     else if (a.startsWith("--root=")) args.root = path.resolve(a.slice(7));
     else if (a.startsWith("--budget=")) args.budget = Number(a.slice(9)) || 1200;
+    else if (a === "--no-gitignore") args.scan.noGitignore = true;
+    else if (a === "--ignore") args.scan.ignore = [...(args.scan.ignore ?? []), ...(argv[++i] ?? "").split(",").map((s) => s.trim()).filter(Boolean)];
+    else if (a.startsWith("--ignore=")) args.scan.ignore = [...(args.scan.ignore ?? []), ...a.slice(9).split(",").map((s) => s.trim()).filter(Boolean)];
     else if (a === "--help" || a === "-h") { console.log(HELP); process.exit(0); }
     else args.rest.push(a);
   }
@@ -45,7 +56,7 @@ function parseArgs(argv: string[]): Args {
 async function cmdPrepare(args: Args) {
   const t0 = performance.now();
   const task = args.rest.join(" ").trim() || args.rest[0] || "";
-  const b = await build(args.root);
+  const b = await build(args.root, args.scan);
   const changed = await changedFiles(b.root);
   const explicit = explicitFilesFromTask(task, b.files);
   const hits = rankSymbols({ task, graph: b.graph, changed, explicitFiles: explicit });
@@ -89,7 +100,7 @@ async function cmdImpact(args: Args) {
   const t0 = performance.now();
   const arg = args.rest[0];
   const diffOnly = arg === "--diff" || arg === "diff";
-  const b = await build(args.root);
+  const b = await build(args.root, args.scan);
   const changed = await changedFiles(b.root);
   b.changed = changed;
   const r: ImpactReport = impact(b, diffOnly ? undefined : arg, diffOnly);

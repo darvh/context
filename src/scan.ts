@@ -16,6 +16,13 @@ const DEFAULT_IGNORES = [
   "*.lock",
 ];
 
+export interface ScanOpts {
+  /** extra glob patterns to ignore, on top of .gitignore + defaults */
+  ignore?: string[];
+  /** skip reading .gitignore files (defaults still apply) */
+  noGitignore?: boolean;
+}
+
 export interface ScanResult {
   root: string; // repository root (git identity, cache key)
   tree: string; // directory actually walked (scope)
@@ -46,14 +53,17 @@ export async function findRoot(start: string): Promise<string | null> {
   return null;
 }
 
-async function loadIgnore(...roots: string[]): Promise<(p: string, isDir: boolean) => boolean> {
+async function loadIgnore(opts: ScanOpts, ...roots: string[]): Promise<(p: string, d: boolean) => boolean> {
   const ig = ignore();
   ig.add(DEFAULT_IGNORES);
-  for (const root of roots) {
-    try {
-      const gi = await fs.readFile(path.join(root, ".gitignore"), "utf8");
-      ig.add(gi.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith("#")));
-    } catch {}
+  if (opts.ignore?.length) ig.add(opts.ignore);
+  if (!opts.noGitignore) {
+    for (const root of roots) {
+      try {
+        const gi = await fs.readFile(path.join(root, ".gitignore"), "utf8");
+        ig.add(gi.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith("#")));
+      } catch {}
+    }
   }
   return (p, isDir) => ig.ignores(isDir ? p + "/" : p);
 }
@@ -63,7 +73,7 @@ interface IgnoreLayer {
   ig: ReturnType<typeof ignore>;
 }
 
-async function collectFiles(root: string, baseIgnored: (p: string, d: boolean) => boolean): Promise<string[]> {
+async function collectFiles(root: string, baseIgnored: (p: string, d: boolean) => boolean, opts: ScanOpts): Promise<string[]> {
   const out: string[] = [];
   const stack: { rel: string; layers: IgnoreLayer[] }[] = [{ rel: "", layers: [] }];
   while (stack.length) {
@@ -79,12 +89,14 @@ async function collectFiles(root: string, baseIgnored: (p: string, d: boolean) =
     }
     // nested .gitignore rules are scoped to this dir and its descendants
     let own = layers;
-    try {
-      const rules = (await fs.readFile(path.join(dir, ".gitignore"), "utf8"))
-        .split(/\r?\n/)
-        .filter((l) => l.trim() && !l.trim().startsWith("#"));
-      if (rules.length) own = [...layers, { dir: rel, ig: ignore().add(rules) }];
-    } catch {}
+    if (!opts.noGitignore) {
+      try {
+        const rules = (await fs.readFile(path.join(dir, ".gitignore"), "utf8"))
+          .split(/\r?\n/)
+          .filter((l) => l.trim() && !l.trim().startsWith("#"));
+        if (rules.length) own = [...layers, { dir: rel, ig: ignore().add(rules) }];
+      } catch {}
+    }
     const ignored = (p: string, isDir: boolean): boolean => {
       if (baseIgnored(p, isDir)) return true;
       for (const l of own) {
@@ -145,12 +157,12 @@ async function gitOut(root: string, args: string[]): Promise<string | null> {
   }
 }
 
-export async function scan(cwd: string): Promise<ScanResult> {
+export async function scan(cwd: string, opts: ScanOpts = {}): Promise<ScanResult> {
   const abs = path.resolve(cwd);
   const repoRoot = (await findRoot(abs)) ?? abs;
   const tree = abs;
-  const isIgnored = await loadIgnore(repoRoot, abs);
-  const files = await collectFiles(tree, isIgnored);
+  const isIgnored = await loadIgnore(opts, repoRoot, abs);
+  const files = await collectFiles(tree, isIgnored, opts);
   const manifest = await buildManifest(tree, files);
   const gitHead = await gitOut(repoRoot, ["rev-parse", "--short", "HEAD"]);
   return {
