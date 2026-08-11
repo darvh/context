@@ -40,7 +40,10 @@ export function extractRg(ctx: Ctx): void {
     if (!trimmed) continue;
     // strip php opening tag for class detection
     if (trimmed.startsWith("<?php")) trimmed = trimmed.replace(/^<\?php\s*/, "");
-    if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith("#") || trimmed.startsWith("/*") || trimmed.startsWith("*")) continue;
+    // skip comment lines, but let preprocessor imports (#include/#import/#require) through
+    if (!trimmed) continue;
+    if (trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) continue;
+    if (trimmed.startsWith("#") && !/^#\s*(include|import|require)\b/.test(trimmed)) continue;
     if (SKIP_START.test(trimmed)) continue;
 
     const isTest = isTestFile || /^(test|spec|Test)/.test(trimmed);

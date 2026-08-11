@@ -7,6 +7,7 @@ import path from "node:path";
 const GO = new URL("./fixtures/go", import.meta.url).pathname;
 const TS = new URL("./fixtures/typescript", import.meta.url).pathname;
 const PY = new URL("./fixtures/python", import.meta.url).pathname;
+const ML = new URL("./fixtures/multilang", import.meta.url).pathname;
 
 // fresh copy per build: forces a real parse (never served from the warm cache)
 async function buildFresh(src: string): Promise<BuildResult> {
@@ -68,22 +69,21 @@ describe("structural extraction", () => {
 
   test("rg fallback: multilang symbol extraction", async () => {
     const b = await buildFresh(ML);
-    const names = b.graph.symbols.map((s) => `${s.kind}:${s.name}`);
-    const expectHas = (n: string) => expect(names, n).toContain(n);
-    expectHas("entry:Main");      // java
-    expectHas("import:List");     // java import
-    expectHas("class:MyClass");   // ruby
-    expectHas("entry:main");      // rust
-    expectHas("class:App");       // php
-    expectHas("entry:main");      // c
-    expectHas("class:MyClass");   // cpp
-    expectHas("entry:Program");   // csharp
-    expectHas("entry:App");       // kotlin
-    expectHas("entry:main");      // swift
-    expectHas("entry:main");      // sh
-    expectHas("function:myfunc"); // lua
-    expectHas("entry:Main");      // scala
-    expectHas("class:MyClass");   // dart
+    const kinds = (file: string) =>
+      b.graph.symbols.filter((s) => s.file === file).map((s) => `${s.kind}:${s.name}`);
+    expect(kinds("Main.java")).toEqual(expect.arrayContaining(["entry:Main", "import:List"]));
+    expect(kinds("app.rb")).toEqual(expect.arrayContaining(["class:MyClass"]));
+    expect(kinds("main.rs")).toEqual(expect.arrayContaining(["entry:main", "struct:Foo"]));
+    expect(kinds("index.php")).toEqual(expect.arrayContaining(["class:App"]));
+    expect(kinds("main.c")).toEqual(expect.arrayContaining(["entry:main"]));
+    expect(kinds("main.cpp")).toEqual(expect.arrayContaining(["entry:main", "class:MyClass"]));
+    expect(kinds("Program.cs")).toEqual(expect.arrayContaining(["entry:Program"]));
+    expect(kinds("Main.kt")).toEqual(expect.arrayContaining(["entry:main", "entry:App"]));
+    expect(kinds("main.swift")).toEqual(expect.arrayContaining(["entry:main"]));
+    expect(kinds("main.sh")).toEqual(expect.arrayContaining(["entry:main"]));
+    expect(kinds("init.lua")).toEqual(expect.arrayContaining(["function:myfunc"]));
+    expect(kinds("Main.scala")).toEqual(expect.arrayContaining(["entry:Main"]));
+    expect(kinds("main.dart")).toEqual(expect.arrayContaining(["class:MyClass"]));
   });
 
   test("no repo mutation: cache lives outside the tree", async () => {

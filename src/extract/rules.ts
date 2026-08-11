@@ -107,32 +107,12 @@ export const ROUTE_RULES: Record<string, { methods: Set<string>; bases: Set<stri
     methods: new Set(["get", "post", "put", "patch", "delete", "options", "route"]),
     bases: new Set(["app", "bp", "blueprint", "router"]),
   },
-  java: {
-    methods: new Set(["GetMapping", "PostMapping", "PutMapping", "DeleteMapping", "PatchMapping", "RequestMapping", "get", "post"]),
-    bases: new Set(["app", "router", "api", "controller"]),
-  },
-  rb: {
-    methods: new Set(["get", "post", "put", "patch", "delete", "resources", "namespace"]),
-    bases: new Set(["app", "router", "routes", "resource"]),
-  },
-  rs: {
-    methods: new Set(["get", "post", "put", "patch", "delete", "route", "service"]),
-    bases: new Set(["app", "router", "web", "scope", "server"]),
-  },
-  php: {
-    methods: new Set(["get", "post", "put", "patch", "delete", "Route"]),
-    bases: new Set(["app", "router", "Route", "route"]),
-  },
 };
 
 export const TEST_IDENTS = {
   ts: new Set(["it", "test", "describe", "beforeEach", "afterEach", "beforeAll", "afterAll"]),
   go: /^(Test|Benchmark|Example|Fuzz)[A-Z]/,
   py: { funcPrefix: "test_", classPrefix: "Test" },
-  java: { classSuffix: "Test", annotation: "@Test" },
-  rb: { suffix: "_test", methodPrefix: "test_" },
-  rs: { attr: "#[test]" },
-  php: { suffix: "Test", funcPrefix: "test" },
 };
 
 export const ENTRY_SYMBOL_RULES: Record<string, { func?: RegExp; class?: RegExp; configKinds: Set<string> }> = {
@@ -151,6 +131,9 @@ export const ENTRY_SYMBOL_RULES: Record<string, { func?: RegExp; class?: RegExp;
   kt: { func: /^main$/, class: /^(Main|App|Application)$/, configKinds: new Set(["const", "var"]) },
   swift: { func: /^main$/, configKinds: new Set(["const", "var"]) },
   sh: { func: /^main$/, configKinds: new Set(["const", "var"]) },
+  scala: { func: /^main$/, class: /^(Main|App)$/, configKinds: new Set(["const", "var"]) },
+  dart: { func: /^main$/, configKinds: new Set(["const", "var"]) },
+  lua: { func: /^main$/, configKinds: new Set(["const", "var"]) },
 };
 
 // doc comment detection — previously inline regex in core.ts
@@ -161,8 +144,6 @@ export const DOC_CLEAN_RE = /^(\/\/|\*|#|"""?|'''?)\s*/;
 export const SIG_STOPS = ["{", "=>", "->", ":=", ":"] as const;
 export const SIG_LANG_SPECIAL: Record<string, "first-line-only"> = {
   py: "first-line-only",
-  rb: "first-line-only",
-  pyi: "first-line-only",
 };
 
 export const RG_DECL = {
@@ -172,18 +153,10 @@ export const RG_DECL = {
   const: /^(?:(?:export|pub|public|final|static|const)\s+)*(?:const|let|var|val|defconst)\s+([A-Za-z_$][\w$]*)\s*=/,
   cFunc: /^\s*(?:(?:public|private|protected|static|final|inline|virtual|override|export|async|extern)\s+)*(?:[\w<>:\[\]]+\s+)+([A-Za-z_]\w*)\s*\([^)]*\)\s*(?:\{|;|$)/,
   shFunc: /^\s*([A-Za-z_]\w*)\s*\(\)\s*\{/,
-  javaMethod: /(?:public|private|protected|static|final|\s)+\s*[A-Za-z_][\w<>\[\]]*\s+([A-Za-z_]\w*)\s*\(/,
   phpClass: /(?:class|interface|trait)\s+([A-Za-z_]\w*)/,
 };
 
 export type RgKind = "function" | "class" | "interface" | "struct" | "type" | "const" | "var";
-
-export const RG_DECL_KINDS: Array<{ re: RegExp; kind: (line: string) => RgKind }> = [
-  { re: RG_DECL.fn, kind: () => "function" },
-  { re: RG_DECL.class, kind: (line) => (/\b(struct|enum)\b/.test(line) ? "struct" : /\b(class|trait|interface)\b/.test(line) ? "class" : "class") },
-  { re: RG_DECL.type, kind: () => "type" },
-  { re: RG_DECL.const, kind: (line) => (/^\s*(const|final|val)\b/.test(line) ? "const" : "var") },
-];
 
 // unified import regexes previously in rg.ts
 export const RG_IMPORT_RES = [
@@ -206,6 +179,3 @@ export function rgKindFromLine(line: string): RgKind {
   if (/^\s*[A-Za-z_]\w*\s*\([^)]*\)\s*\{/.test(line)) return "function"; // sh style main() { }
   return "var";
 }
-
-// helper: list of all supported rg langs (keys in FILE_PATTERNS excluding tree-sitter langs)
-export const RG_LANGS = ["java", "rb", "rs", "php", "c", "cpp", "cs", "kt", "swift", "sh", "lua", "scala", "dart"] as const;
