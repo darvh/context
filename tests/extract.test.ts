@@ -95,3 +95,4 @@ describe("structural extraction", () => {
     expect(entries).not.toContain(".gitignore");
     expect(b.root.endsWith("fixtures/go")).toBe(true);
   });
+});
