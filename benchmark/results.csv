@@ -1,3 +1,9 @@
 arm,task,rep,status,success,edited_golden,first_relevant_ms,first_relevant_file,first_edit_ms,exploration_before_first_edit,first_relevant_calls,input_before_first_relevant,input_tokens,output_tokens,cache_tokens,total_tokens,cost_usd,wall_ms,capsule_tokens,failure_category
-cold,sess-go,1,ok,true,true,11747,internal/session/store.go,36056,7,3,20324,26198,4786,505344,536328,0.003534,128708,0,success
-context,sess-go,1,ok,true,true,1173,internal/session/store.go,12933,2,1,0,26612,3280,334080,363972,0.002954,103775,308,success
+cold,sess-ts,1,ok,true,true,11879,src/session/store.ts,35050,7,4,21654,25670,2848,257024,285542,0.002579,90168,0,success
+cold,sess-ts,2,ok,true,true,3869,src/session/store.ts,22253,6,3,21748,24648,1668,141056,167372,0.002177,51347,0,success
+cold,sess-go,1,ok,false,true,11288,internal/session/store.go,46880,7,4,19714,24894,3560,373248,401702,0.003012,102083,0,implementation-or-tests
+cold,sess-go,2,ok,true,true,12689,internal/session/store.go,20792,8,4,22132,27640,5840,546560,580040,0.003723,152240,0,success
+context,sess-ts,1,timeout,,false,,,,0,0,0,0,0,0,0,0.000000,1038573,370,environment
+context,sess-ts,2,timeout,,false,,,,0,0,0,0,0,0,0,0.000000,996639,370,environment
+context,sess-go,1,timeout,,true,1020,internal/session/store.go,8240,4,1,0,25830,3142,188160,217132,0.002720,646975,308,success
+context,sess-go,2,timeout,,false,,,,0,0,0,0,0,0,0,0.000000,964729,308,environment
