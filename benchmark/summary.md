@@ -1,6 +1,7 @@
 # Context benchmark summary
 
 Model: `opencode-go/deepseek-v4-flash` — usage multiplier 2x on reported tokens.
+Thinking: `default` (fixed task condition, identical across all arms).
 Cost = true API pricing: input cache-miss $0.14/1M, cache-hit $0.0028/1M (98% off), output $0.28/1M, no cache-write fee. Computed from provider raw tokens.
 Token and cost figures below are already multiplied. Token totals are provider-reported via `step_finish`.
 

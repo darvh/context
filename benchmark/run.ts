@@ -35,6 +35,7 @@ interface CliArgs {
   arms: string[];
   tasks: string[];
   reps: number | null;
+  thinking: "default" | "high";
   dry: boolean;
   replay: boolean;
   outDir: string;
@@ -42,11 +43,16 @@ interface CliArgs {
 }
 
 function parseCli(argv: string[]): CliArgs {
-  const a: CliArgs = { arms: [], tasks: [], reps: null, dry: false, replay: false, outDir: BENCH, concurrency: 1 };
+  const a: CliArgs = { arms: [], tasks: [], reps: null, thinking: "high", dry: false, replay: false, outDir: BENCH, concurrency: 1 };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
     if (x === "--arms") a.arms = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
     else if (x === "--tasks") a.tasks = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
+    else if (x === "--thinking") {
+      const v = argv[++i];
+      if (v !== "default" && v !== "high") throw new Error(`--thinking must be default or high (got ${v})`);
+      a.thinking = v;
+    }
     else if (x === "--reps") a.reps = Number(argv[++i]);
     else if (x === "--concurrency" || x === "-j") a.concurrency = Number(argv[++i]) || 1;
     else if (x === "--dry") a.dry = true;
@@ -60,9 +66,11 @@ function parseCli(argv: string[]): CliArgs {
 const help = `context bench — paired evaluation via opencode (deepseek-v4-flash, 2x usage)
 
 usage: bun run benchmark/run.ts [--arms cold,context] [--tasks sess-go] [--reps N]
-                                [-j N|--concurrency N] [--dry] [--replay] [--out DIR]
+                                [--thinking default|high] [-j N|--concurrency N] [--dry] [--replay] [--out DIR]
 
   -j, --concurrency N   run up to N cells in parallel (each in its own process group)
+  --thinking default|high  reasoning effort; fixed task condition, identical across all arms
+                          (high appends --variant high to the opencode run command)
   --dry                 print the run plan (repos, prompts, verify) without invoking models
   --replay              rebuild metrics + reports from existing raw transcripts (no model cost)
 `;
@@ -170,6 +178,7 @@ async function runOc(
       "run",
       "--format", "json",
       "-m", manifest.model.id,
+      ...(args.thinking === "high" ? ["--variant", "high"] : []),
       "--dir", scratch,
       "--title", id,
       "--auto",
@@ -212,11 +221,12 @@ async function runOc(
   m.rep = rep;
   m.status = status;
   m.success = verifyStatus;
+  m.thinking = args.thinking;
 
   // sidecar for --replay (no model cost)
   await fs.writeFile(
     path.join(rawDir, `${id}.meta.json`),
-    JSON.stringify({ arm, task: task.id, rep, status, revision: task.revision ?? null, capsuleTokens, wallMs, verifyStatus, verifyOutput: verifyOut }),
+    JSON.stringify({ arm, task: task.id, rep, thinking: args.thinking, status, revision: task.revision ?? null, capsuleTokens, wallMs, verifyStatus, verifyOutput: verifyOut }),
   );
   return m;
 }
@@ -261,6 +271,7 @@ async function replay(args: CliArgs, manifest: Manifest): Promise<MetricRun[]> {
         m.rep = Number(id.split("-").pop()?.replace("r", "") ?? 0);
         m.status = meta?.status ?? "ok";
         m.success = meta?.verifyStatus ?? null;
+        m.thinking = meta?.thinking ?? "default";
         runs.push(m);      }
     }
   }
@@ -305,7 +316,7 @@ export async function main(argv: string[]) {
         } catch (e) {
           console.error(`[bench] ${runId(arm, task.id, rep)} failed: ${e}`);
           runs.push({
-            arm, task: task.id, rep, status: "error", success: null, editedGolden: false,
+            arm, task: task.id, rep, status: "error", success: null, editedGolden: false, thinking: args.thinking,
             firstRelevantMs: null, firstRelevantFile: null, firstEditMs: null,
             explorationBeforeFirstEdit: 0, firstRelevantCalls: 0, inputTokens: 0, outputTokens: 0,
             cacheReadTokens: 0, totalTokens: 0, costUsd: 0, wallMs: 0, capsuleTokens: 0,

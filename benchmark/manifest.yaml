@@ -8,12 +8,14 @@
 # "first relevant" source points; they drive recall metrics and are the same
 # for every arm.
 
+fixture_source: sample # spike fixtures only; real Phase-0 fixture (SWE-bench / TB 2.1 via harbor) pending
+
 model:
   id: opencode-go/deepseek-v4-flash
   usage_multiplier: 2 # billed at 2x usage; applied to reported token counts
   timeout_seconds: 600
   permission: auto # auto-approve tool permissions (scripted, disposable fixtures)
-  reps: 2
+  reps: 3
   # True cost schedule — DeepSeek V4 Flash (per 1M tokens):
   #   input cache miss $0.14, input cache hit $0.0028 (98% off), no cache-write fee.
   #   OUTPUT price is not in the stated schedule; adjust output_per_1m to the
@@ -62,6 +64,7 @@ arms:
 # (navigation/implementation/tests/environment) in failure-analysis.md.
 tasks:
   - id: sess-go
+    fixture: sample
     repo: spike/fixtures/go
     prompt: |
       Where is session persistence handled in this repository? Make the store
@@ -73,6 +76,7 @@ tasks:
       - "internal/session/store_test.go:6"
     verify_cmd: go test ./...
   - id: sess-ts
+    fixture: sample
     repo: spike/fixtures/typescript
     prompt: |
       Where is session persistence handled in this repository? Add a clear

@@ -6,6 +6,7 @@ export interface MetricRun {
   arm: string;
   task: string;
   rep: number;
+  thinking: string; // reasoning effort (default|high); fixed task condition, same across arms
   status: 'ok' | 'timeout' | 'error';
   success: boolean | null; // verify_cmd result, null when no verify
   editedGolden: boolean;
@@ -182,6 +183,7 @@ export function computeMetrics(
     arm: '',
     task: '',
     rep: 0,
+    thinking: 'default',
     status: 'ok',
     success: extras.verifyStatus,
     editedGolden,

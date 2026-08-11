@@ -3,7 +3,7 @@ import path from "node:path";
 import type { MetricRun } from "./metrics";
 
 const CSV_HEADER = [
-  "arm", "task", "rep", "status", "success", "edited_golden",
+  "arm", "task", "rep", "thinking", "status", "success", "edited_golden",
   "first_relevant_ms", "first_relevant_file", "first_edit_ms",
   "exploration_before_first_edit", "first_relevant_calls", "input_before_first_relevant",
   "input_tokens", "output_tokens", "cache_tokens", "input_miss_tokens", "cache_hit_pct",
@@ -13,7 +13,7 @@ const CSV_HEADER = [
 
 function csvRow(r: MetricRun): string[] {
   return [
-    r.arm, r.task, String(r.rep), r.status, r.success === null ? "" : String(r.success), String(r.editedGolden),
+    r.arm, r.task, String(r.rep), r.thinking, r.status, r.success === null ? "" : String(r.success), String(r.editedGolden),
     r.firstRelevantMs === null ? "" : String(r.firstRelevantMs), r.firstRelevantFile ?? "", r.firstEditMs === null ? "" : String(r.firstEditMs),
     String(r.explorationBeforeFirstEdit), String(r.firstRelevantCalls), String(r.inputTokensBeforeFirstRelevant),
     String(r.inputTokens), String(r.outputTokens), String(r.cacheReadTokens), String(r.inputMissTokens), r.cacheHitPct.toFixed(1),
@@ -42,6 +42,7 @@ export async function writeReport(runs: MetricRun[], outDir: string, manifest: {
   lines.push(`# Context benchmark summary`);
   lines.push("");
   lines.push(`Model: \`${manifest.model.id}\` — usage multiplier ${manifest.model.usage_multiplier}x on reported tokens.`);
+  lines.push(`Thinking: \`${runs[0]?.thinking ?? "default"}\` (fixed task condition, identical across all arms).`);
   const p = manifest.model.pricing;
   lines.push(
     `Cost = true API pricing: input cache-miss $${p?.input_miss_per_1m ?? 0}/1M, cache-hit $${p?.input_hit_per_1m ?? 0}/1M (98% off), ` +

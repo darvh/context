@@ -61,5 +61,9 @@ Savings projection (`src/savings.ts`) estimates the input tokens the capsule
 replaces (its pointed-at source spans) minus capsule tokens; `estimated`, per
 the plan's token accounting. Benchmark-only proof lives in `benchmark/`.
 
+Current benchmark results are sample-fixture only (spike fixtures), not a
+product claim; the real fixture (SWE-bench / Terminal-Bench 2.1 via harbor) is
+pending.
+
 See `skill/SKILL.md` for the host-neutral agent skill and `spike/README.md`
 for the feasibility spike.
