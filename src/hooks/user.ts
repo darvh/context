@@ -1,11 +1,11 @@
-import { build } from "./build";
-import { findRoot } from "./scan";
-import { rankSymbols } from "./query";
-import { assemble } from "./assemble";
-import { estTokens } from "./tokens";
-import { projectSavings, type Savings } from "./savings";
-import { hookStatePath, readJson, writeJson } from "./cache";
-import { changedFiles } from "./diff";
+import { build } from "../build";
+import { findRoot } from "../scan";
+import { rankSymbols } from "../query";
+import { assemble } from "../assemble";
+import { estTokens } from "../tokens";
+import { projectSavings, type Savings } from "../savings";
+import { hookStatePath, readJson, writeJson } from "../cache";
+import { changedFiles } from "../diff";
 import { createHash } from "node:crypto";
 
 const HOOK_TIMEOUT_MS = Number(process.env.CONTEXT_HOOK_TIMEOUT_MS ?? 1000);
