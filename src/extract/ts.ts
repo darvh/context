@@ -1,6 +1,6 @@
 import type { Node } from "../parse";
 import type { Ctx } from "./core";
-import { addSym, refEdge } from "./core";
+import { addSym, childField, refEdge, walk } from "./core";
 
 const ROUTE_METHODS = new Set(["get", "post", "put", "patch", "delete", "options", "use", "route", "all"]);
 const ROUTE_BASES = new Set(["app", "router", "server", "fastify", "route", "handler", "r"]);
@@ -8,17 +8,6 @@ const TEST_FNS = new Set(["it", "test", "describe", "beforeEach", "afterEach", "
 
 function isTestFile(f: string) {
   return /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/.test(f);
-}
-
-function walk(n: Node): Node[] {
-  const out: Node[] = [];
-  const stack = [n];
-  while (stack.length) {
-    const c = stack.pop()!;
-    out.push(c);
-    for (let i = c.namedChildCount - 1; i >= 0; i--) stack.push(c.namedChild(i)!);
-  }
-  return out;
 }
 
 function isExported(n: Node): boolean {
@@ -32,10 +21,7 @@ function isExported(n: Node): boolean {
 }
 
 function nameNode(n: Node): Node | null {
-  for (let i = 0; i < n.childCount; i++) {
-    if (n.fieldNameForChild(i) === "name") return n.child(i);
-  }
-  return null;
+  return childField(n, "name");
 }
 
 interface MemberUse {
@@ -138,25 +124,18 @@ export function extractTsJs(root: Node, ctx: Ctx) {
       }
       case "function_declaration":
       case "generator_function_declaration": {
-        const nm = nameNode(n);
-        const name = nm ? nm.text : "anonymous";
         const s = addSym(ctx, n, "function", "exact", { exported: isExported(n), test: fileIsTest });
         collectCallsIn(ctx, n, s.id);
-        void name;
         break;
       }
       case "class_declaration": {
-        const nm = nameNode(n);
         const s = addSym(ctx, n, "class", "exact", { exported: isExported(n), test: fileIsTest });
         collectInherit(ctx, n, s.id);
         break;
       }
       case "method_definition": {
-        const nm = nameNode(n);
-        const name = nm ? nm.text : "method";
         const s = addSym(ctx, n, "method", "exact", { exported: isExported(n), test: fileIsTest });
         collectCallsIn(ctx, n, s.id);
-        void name;
         break;
       }
       case "interface_declaration":
