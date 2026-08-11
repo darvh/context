@@ -3,6 +3,7 @@ import { findRoot } from "./scan";
 import { rankSymbols } from "./query";
 import { assemble } from "./assemble";
 import { estTokens } from "./tokens";
+import { projectSavings, type Savings } from "./savings";
 import { hookStatePath, readJson, writeJson } from "./cache";
 import { changedFiles } from "./diff";
 import { createHash } from "node:crypto";
@@ -70,16 +71,10 @@ export async function runHook(task: string, cwd: string, opts: HookOpts = {}): P
     block.push(`hint: expand with \`context expand ${capsule.hits[0]?.handle}\``);
     out.hookSpecificOutput = { additionalContext: block.join("\n") };
 
-    await writeJson(hookStatePath(), { key });
-    console.error(
-      "context:telemetry " +
-        JSON.stringify({
-          cmd: "hook",
-          capsuleTokens: capsule.tokensUsed,
-          outputTokens: estTokens(JSON.stringify(out)),
-          totalMs: Math.round(performance.now() - t0),
-        }),
-    );
+    // project Graft-style savings from the spans the capsule replaces
+    const savings = await projectSavings(b, capsule);
+    await writeJson(hookStatePath(), { key, savings });
+    console.error("context:telemetry " + JSON.stringify({ cmd: "hook", capsuleTokens: capsule.tokensUsed, savedTokens: savings.savedTokens, savedPct: Math.round(savings.savedPct), outputTokens: estTokens(JSON.stringify(out)), totalMs: Math.round(performance.now() - t0) }));
     clearTimeout(timer);
     return done();
   } catch {

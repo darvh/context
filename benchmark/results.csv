@@ -1,2 +1,3 @@
-arm,task,rep,status,success,edited_golden,first_relevant_ms,first_relevant_file,first_edit_ms,exploration_before_first_edit,first_relevant_calls,input_tokens,output_tokens,cache_tokens,total_tokens,cost_usd,wall_ms,capsule_tokens,failure_category
-context,sess-go,1,error,,false,,,,0,0,0,0,0,0,0.000000,0,0,environment
+arm,task,rep,status,success,edited_golden,first_relevant_ms,first_relevant_file,first_edit_ms,exploration_before_first_edit,first_relevant_calls,input_before_first_relevant,input_tokens,output_tokens,cache_tokens,total_tokens,cost_usd,wall_ms,capsule_tokens,failure_category
+cold,sess-go,1,ok,true,true,11747,internal/session/store.go,36056,7,3,20324,26198,4786,505344,536328,0.003534,128708,0,success
+context,sess-go,1,ok,true,true,1173,internal/session/store.go,12933,2,1,0,26612,3280,334080,363972,0.002954,103775,308,success

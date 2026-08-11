@@ -10,6 +10,8 @@
   "scripts": {
     "start": "bun run src/cli.ts",
     "spike": "bun run spike/bench.ts",
+    "bench": "bun run benchmark/run.ts",
+    "bench:replay": "bun run benchmark/run.ts --replay",
     "grammars": "bun run scripts/embed-grammars.ts",
     "build": "bun run scripts/embed-grammars.ts && bun build --compile src/cli.ts --outfile context-bin",
     "test": "bun test"

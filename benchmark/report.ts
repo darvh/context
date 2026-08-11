@@ -5,7 +5,7 @@ import type { MetricRun } from "./metrics";
 const CSV_HEADER = [
   "arm", "task", "rep", "status", "success", "edited_golden",
   "first_relevant_ms", "first_relevant_file", "first_edit_ms",
-  "exploration_before_first_edit", "first_relevant_calls",
+  "exploration_before_first_edit", "first_relevant_calls", "input_before_first_relevant",
   "input_tokens", "output_tokens", "cache_tokens", "total_tokens",
   "cost_usd", "wall_ms", "capsule_tokens", "failure_category",
 ];
@@ -14,7 +14,7 @@ function csvRow(r: MetricRun): string[] {
   return [
     r.arm, r.task, String(r.rep), r.status, r.success === null ? "" : String(r.success), String(r.editedGolden),
     r.firstRelevantMs === null ? "" : String(r.firstRelevantMs), r.firstRelevantFile ?? "", r.firstEditMs === null ? "" : String(r.firstEditMs),
-    String(r.explorationBeforeFirstEdit), String(r.firstRelevantCalls),
+    String(r.explorationBeforeFirstEdit), String(r.firstRelevantCalls), String(r.inputTokensBeforeFirstRelevant),
     String(r.inputTokens), String(r.outputTokens), String(r.cacheReadTokens), String(r.totalTokens),
     r.costUsd.toFixed(6), String(r.wallMs), String(r.capsuleTokens), r.failureCategory,
   ];
@@ -56,9 +56,36 @@ export async function writeReport(runs: MetricRun[], outDir: string, manifest: {
   metric("total tokens (median)", (rs) => med(rs.map((r) => r.totalTokens)) ?? "-");
   metric("cost USD (sum)", (rs) => rs.reduce((a, r) => a + r.costUsd, 0).toFixed(4));
   lines.push("");
-  lines.push(`Net savings (per arm vs cold, medians): input_tokens_savings_pct, net after capsule+tools — see failure-analysis.md per task.`);
+  lines.push("## Net savings vs cold (per task, median)");
   lines.push("");
+  lines.push("```text");
+  lines.push("gross_savings = cold_input - assisted_input");
+  lines.push("net_savings   = gross_savings - capsule_tokens - added_tool_output");
+  lines.push("net_pct       = net_savings / cold_input");
+  lines.push("```");
+  lines.push("");
+  const tasks = [...new Set(runs.map((r) => r.task))];
+  for (const task of tasks) {
+    const cold = runs.filter((r) => r.arm === "cold" && r.task === task);
+    const ctx = runs.filter((r) => r.arm === "context" && r.task === task);
+    const coldIn = med(cold.map((r) => r.inputTokens));
+    const ctxIn = med(ctx.map((r) => r.inputTokens));
+    const ctxCap = med(ctx.map((r) => r.capsuleTokens)) ?? 0;
+    lines.push(`### ${task}`);
+    if (coldIn === null || ctxIn === null) {
+      lines.push("missing cold or context runs — can't compute savings.");
+    } else {
+      const gross = coldIn - ctxIn;
+      const net = gross - ctxCap;
+      lines.push(`- gross_input_savings: ${Math.round(gross)} (${((gross / coldIn) * 100).toFixed(1)}%)`);
+      lines.push(`- net_savings (after capsule): ${Math.round(net)} (${((net / coldIn) * 100).toFixed(1)}%)`);
+      lines.push(`- exploration calls saved: ${(med(cold.map((r) => r.explorationBeforeFirstEdit)) ?? 0) - (med(ctx.map((r) => r.explorationBeforeFirstEdit)) ?? 0)}`);
+      lines.push(`- success preserved: ${ctx.some((r) => r.success === false) ? "no" : "yes"}`);
+    }
+    lines.push("");
+  }
   lines.push(`Run details in \`results.csv\`; transcripts in \`raw/\`.`);
+  lines.push(`Caveat: single-rep cells are diagnostic samples, not claims — the plan requires >=2 reps per arm.`);
   await fs.writeFile(path.join(outDir, "summary.md"), lines.join("\n") + "\n");
 
   // failure-analysis.md

@@ -14,6 +14,7 @@ export interface MetricRun {
   firstEditMs: number | null;
   explorationBeforeFirstEdit: number;
   firstRelevantCalls: number;
+  inputTokensBeforeFirstRelevant: number;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -162,6 +163,7 @@ export function computeMetrics(
     firstEditMs,
     explorationBeforeFirstEdit,
     firstRelevantCalls,
+    inputTokensBeforeFirstRelevant: inputBeforeFirstRelevant * m,
     inputTokens: rawInput * m,
     outputTokens: rawOutput * m,
     cacheReadTokens: cacheRead * m,

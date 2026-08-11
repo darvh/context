@@ -23,3 +23,5 @@ Host-neutral. One call at the start of non-trivial repository work.
 - Working-tree edits (staged, unstaged, untracked) are visible on the next call.
 - `--json` returns the same capsule for machine use.
 - `context impact --diff` lists changed files and dependents.
+- Token-savings projections (`bin/hook-agent.ts`) are user-visible telemetry,
+  never injected into the model context.

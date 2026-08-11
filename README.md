@@ -14,7 +14,17 @@ plain external content-addressed cache, deterministic lexical + graph ranking.
 context prepare "<task>" [--budget N] [--json] [--root DIR]
 context expand <handle|file:line>
 context impact <symbol|--diff> [--json]
+context init [--targets all|opencode,claude-code,codex,cursor,copilot,antigravity]
+             [--project] [--force] [--dry-run] [--hooks]
 ```
+
+`context init` installs the host-neutral skill into each agent's skill
+directory (same matrix as proof: opencode, claude-code, codex, cursor,
+copilot, antigravity), user or project scope. Idempotent: identical copies are
+`up-to-date`, conflicts are skipped unless `--force`, absent home-scope agent
+dirs are reported and never created silently. `--hooks` additionally wires the
+UserPromptSubmit + agent-response hook adapters (claude-code settings today) —
+explicit opt-in, never silent.
 
 ## Development
 
@@ -37,6 +47,19 @@ edits (staged, unstaged, untracked) are visible on the next call.
 - Every assertion points to source and labels resolution quality.
 - Deterministic output for a fixed tree + task.
 - Emits `context:telemetry <json>` on stderr; all token counts are `estimated`.
+
+## Hooks (host adapters, both fail open)
+
+- `bin/hook-user.ts` — UserPromptSubmit: injects one compact capsule per
+  (task, working-tree) pair; never rewrites commands or mutates the repo.
+- `bin/hook-agent.ts` — agent-response (Claude Code `Stop`): reads the
+  projected savings the user hook stored and emits a Graft-style
+  `~X tokens saved (Y%, net ~Z after capsule)` line. **User-visible only** —
+  it is telemetry, never injected back into the model context.
+
+Savings projection (`src/savings.ts`) estimates the input tokens the capsule
+replaces (its pointed-at source spans) minus capsule tokens; `estimated`, per
+the plan's token accounting. Benchmark-only proof lives in `benchmark/`.
 
 See `skill/SKILL.md` for the host-neutral agent skill and `spike/README.md`
 for the feasibility spike.

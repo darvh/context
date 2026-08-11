@@ -23,24 +23,28 @@ interface Manifest {
 
 const ROOT = path.join(import.meta.dir, "..");
 const BENCH = path.join(import.meta.dir, ".");
-const SCRATCH = path.join(ROOT, "var", "bench");
+// Scratch MUST live outside the repository: opencode walks up from --dir and
+// would otherwise detect the context repo and auto-commit into it (observed).
+const SCRATCH = path.join(process.env.XDG_CACHE_HOME ?? path.join(process.env.HOME ?? "/tmp", ".cache"), "context", "bench");
 
 interface CliArgs {
   arms: string[];
   tasks: string[];
   reps: number | null;
   dry: boolean;
+  replay: boolean;
   outDir: string;
 }
 
 function parseCli(argv: string[]): CliArgs {
-  const a: CliArgs = { arms: [], tasks: [], reps: null, dry: false, outDir: BENCH };
+  const a: CliArgs = { arms: [], tasks: [], reps: null, dry: false, replay: false, outDir: BENCH };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
     if (x === "--arms") a.arms = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
     else if (x === "--tasks") a.tasks = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
     else if (x === "--reps") a.reps = Number(argv[++i]);
     else if (x === "--dry") a.dry = true;
+    else if (x === "--replay") a.replay = true;
     else if (x === "--out") a.outDir = argv[++i];
     else if (x === "--help") { console.log(help); process.exit(0); }
   }
@@ -49,9 +53,10 @@ function parseCli(argv: string[]): CliArgs {
 
 const help = `context bench — paired evaluation via opencode (deepseek-v4-flash, 2x usage)
 
-usage: bun run benchmark/run.ts [--arms cold,context] [--tasks sess-go] [--reps N] [--dry] [--out DIR]
+usage: bun run benchmark/run.ts [--arms cold,context] [--tasks sess-go] [--reps N] [--dry] [--replay] [--out DIR]
 
-  --dry   print the run plan (repos, prompts, verify) without invoking models
+  --dry     print the run plan (repos, prompts, verify) without invoking models
+  --replay  rebuild metrics + reports from existing raw transcripts (no model cost)
 `;
 
 async function readManifest(): Promise<Manifest> {
@@ -62,6 +67,28 @@ async function readManifest(): Promise<Manifest> {
 function runId(arm: string, task: string, rep: number): string {
   return `${arm}-${task}-r${rep}`;
 }
+
+// opencode runs in its own process group (detached) so a hung run can be
+// killed group-wide instead of orphaning children that hold the shared
+// opencode.db lock and wedge every later run (observed).
+const groups = new Set<number>();
+function spawnGroup(cmd: string[], opts: { cwd: string; stdout: "pipe"; stderr: "pipe" }): ReturnType<typeof Bun.spawn> {
+  const p = Bun.spawn({ cmd, ...opts, detached: true });
+  groups.add(p.pid);
+  return p;
+}
+function killGroup(pid: number): void {
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {}
+  groups.delete(pid);
+}
+function killAllGroups(): void {
+  for (const pid of groups) killGroup(pid);
+}
+process.on("exit", killAllGroups);
+process.on("SIGINT", () => { killAllGroups(); process.exit(130); });
+process.on("SIGTERM", () => { killAllGroups(); process.exit(143); });
 
 async function copyRepo(repoRel: string, dest: string): Promise<void> {
   const src = path.resolve(ROOT, repoRel);
@@ -120,20 +147,22 @@ async function runOc(
       "--auto",
       prompt,
     ];
-    const p = Bun.spawn({ cmd, stdout: "pipe", stderr: "pipe", cwd: ROOT });
+    const p = spawnGroup(cmd, { cwd: scratch, stdout: "pipe", stderr: "pipe" });
     const killTimer = setTimeout(() => {
       status = "timeout";
-      p.kill();
+      killGroup(p.pid);
     }, manifest.model.timeout_seconds * 1000);
     try {
       const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
       stdout = out;
-      if ((await p.exited) !== 0 && status !== "timeout") {
+      const code = await p.exited;
+      if (code !== 0 && status !== "timeout") {
         status = "error";
         console.error(`[bench] ${id}: opencode exited non-zero\n${err.slice(0, 800)}`);
       }
     } finally {
       clearTimeout(killTimer);
+      killGroup(p.pid);
     }
   }
   const wallMs = Date.now() - t0;
@@ -143,24 +172,84 @@ async function runOc(
   const transcript = parseTranscript(stdout.split("\n"));
   const goldenFiles = new Set(task.golden.map((g) => g.split(":")[0]));
   const { status: verifyStatus, out: verifyOut } = status === "ok" ? await runVerify(task.verify_cmd, scratch) : { status: null, out: "" };
-  const editedGolden = false; // refined from transcript below via computeMetrics? no; placeholder
   const m = computeMetrics(transcript, {
     goldenFiles,
     runStart: transcript.firstTs || t0,
     usageMultiplier: manifest.model.usage_multiplier,
-  }, { capsuleTokens, wallMs, editedGolden, verifyStatus, verifyOutput: verifyOut });
+  }, { capsuleTokens, wallMs, editedGolden: false, verifyStatus, verifyOutput: verifyOut });
 
   m.arm = arm;
   m.task = task.id;
   m.rep = rep;
   m.status = status;
   m.success = verifyStatus;
+
+  // sidecar for --replay (no model cost)
+  await fs.writeFile(
+    path.join(rawDir, `${id}.meta.json`),
+    JSON.stringify({ arm, task: task.id, rep, status, capsuleTokens, wallMs, verifyStatus, verifyOutput: verifyOut }),
+  );
   return m;
+}
+
+/** Rebuild metrics + reports from existing raw transcripts and sidecars. */
+async function replay(args: CliArgs, manifest: Manifest): Promise<MetricRun[]> {
+  const runs: MetricRun[] = [];
+  const rawRoot = path.join(args.outDir, "raw");
+  for (const arm of Object.keys(manifest.arms)) {
+    const armDir = path.join(rawRoot, arm);
+    let tasks: string[];
+    try {
+      tasks = await fs.readdir(armDir);
+    } catch {
+      continue;
+    }
+    for (const taskDir of tasks) {
+      if (args.tasks.length && !args.tasks.includes(taskDir)) continue;
+      const t = manifest.tasks.find((x) => x.id === taskDir);
+      if (!t) continue;
+      const files = (await fs.readdir(path.join(armDir, taskDir))).filter((f) => f.endsWith(".jsonl"));
+      for (const f of files) {
+        const id = f.replace(/\.jsonl$/, "");
+        const meta = await fs.readFile(path.join(armDir, taskDir, `${id}.meta.json`), "utf8").then(JSON.parse).catch(() => null);
+        const lines = (await fs.readFile(path.join(armDir, taskDir, f), "utf8")).split("\n");
+        const tr = parseTranscript(lines);
+        const goldenFiles = new Set(t.golden.map((g) => g.split(":")[0]));
+        const m = computeMetrics(tr, {
+          goldenFiles,
+          runStart: tr.firstTs || 0,
+          usageMultiplier: manifest.model.usage_multiplier,
+        }, {
+          capsuleTokens: meta?.capsuleTokens ?? 0,
+          wallMs: meta?.wallMs ?? 0,
+          editedGolden: false,
+          verifyStatus: meta?.verifyStatus ?? null,
+          verifyOutput: meta?.verifyOutput ?? "",
+        });
+        m.arm = arm;
+        m.task = t.id;
+        m.rep = Number(id.split("-").pop()?.replace("r", "") ?? 0);
+        m.status = meta?.status ?? "ok";
+        m.success = meta?.verifyStatus ?? null;
+        runs.push(m);      }
+    }
+  }
+  return runs;
 }
 
 export async function main(argv: string[]) {
   const args = parseCli(argv);
   const manifest = await readManifest();
+
+  if (args.replay) {
+    const runs = await replay(args, manifest);
+    if (!runs.length) { console.error("no raw transcripts found under", args.outDir); process.exit(1); }
+    const { writeReport } = await import("./report");
+    await writeReport(runs, args.outDir, manifest);
+    console.log(`[replay] rebuilt reports from ${runs.length} runs`);
+    return;
+  }
+
   const tasks = manifest.tasks.filter((t) => !args.tasks.length || args.tasks.includes(t.id));
   const arms = Object.entries(manifest.arms)
     .filter(([id, a]) => a.enabled && (!args.arms.length || args.arms.includes(id)))
@@ -198,8 +287,10 @@ export async function main(argv: string[]) {
   }
 
   if (!args.dry && runs.length) {
+    // rebuild the report from ALL raw transcripts so cells accumulate
+    const all = await replay(args, manifest);
     const { writeReport } = await import("./report");
-    await writeReport(runs, args.outDir, manifest);
+    await writeReport(all.length ? all : runs, args.outDir, manifest);
   } else if (args.dry) {
     console.log("[dry] plan complete; nothing run");
   }

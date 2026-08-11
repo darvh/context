@@ -15,6 +15,8 @@ usage:
   context prepare "<task>" [--budget N] [--json] [--root DIR]
   context expand <handle|file:line> [--root DIR]
   context impact <symbol|--diff> [--json] [--root DIR]
+  context init [--targets all|opencode,claude-code,codex,cursor,copilot,antigravity]
+               [--project] [--force] [--dry-run] [--hooks]
   context --help
 `;
 
@@ -103,6 +105,33 @@ async function cmdImpact(args: Args) {
   process.stdout.write(out);
 }
 
+async function cmdInit(args: Args, rest: string[]) {
+  let targets = "all";
+  let project = false;
+  let force = false;
+  let dryRun = false;
+  let hooks = false;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (a === "--project") project = true;
+    else if (a === "--force") force = true;
+    else if (a === "--dry-run") dryRun = true;
+    else if (a === "--hooks") hooks = true;
+    else if (a === "--targets") targets = rest[++i] ?? "all";
+    else if (a.startsWith("--targets=")) targets = a.slice(10);
+  }
+  const only = targets === "all" ? [] : targets.split(",").map((s) => s.trim()).filter(Boolean);
+  const repo = project ? (await (await import("./scan")).findRoot(args.root)) ?? args.root : "";
+  const { init, agentPaths } = await import("./init");
+  console.log(`context init (targets: ${targets}, ${project ? "project" : "user"} scope${hooks ? ", hooks" : ""})`);
+  for (const r of await init({ project, repo, force, dryRun, only, hooks })) {
+    const note = r.note ? ` ${r.note}` : "";
+    const loc = r.status === "unselected" ? "" : r.dir;
+    console.log(`  ${r.agent.padEnd(11)}  ${r.what.padEnd(12)}  ${r.status.padEnd(10)}  ${loc}${note}`);
+  }
+  if (project && repo) console.log(`project skill dirs: ${agentPaths({ project, repo, force, dryRun, only, hooks }).join(", ")}`);
+}
+
 export async function main(argv: string[]) {
   const args = parseArgs(argv);
   const cmd = args.rest[0] ?? "";
@@ -119,6 +148,9 @@ export async function main(argv: string[]) {
   } else if (cmd === "impact") {
     args.rest.shift();
     await cmdImpact(args);
+  } else if (cmd === "init") {
+    args.rest.shift();
+    await cmdInit(args, args.rest);
   } else {
     console.error(`context: unknown command "${cmd}"\n`);
     console.error(HELP);
