@@ -69,8 +69,6 @@ export interface Graph {
   imports: Import[];
 }
 
-export const fmtSpan = (s: Span) => `${s.sl}:${s.sc}-${s.el}:${s.ec}`;
-
 export function makeId(file: string, name: string, line: number): string {
   return `${file}::${name}::${line}`;
 }

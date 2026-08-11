@@ -55,6 +55,4 @@ export async function parse(
   }
 }
 
-export function isComment(type: string): boolean {
-  return /comment|doc/.test(type);
-}
+

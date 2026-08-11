@@ -37,6 +37,19 @@ function childField(n: Node, field: string): Node | null {
   }
   return null;
 }
+export { childField };
+
+/** iterative depth-first traversal, named children only */
+export function walk(n: Node): Node[] {
+  const out: Node[] = [];
+  const stack = [n];
+  while (stack.length) {
+    const c = stack.pop()!;
+    out.push(c);
+    for (let i = c.namedChildCount - 1; i >= 0; i--) stack.push(c.namedChild(i)!);
+  }
+  return out;
+}
 
 export function declName(n: Node): string {
   const f = childField(n, "name");

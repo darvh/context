@@ -32,11 +32,6 @@ export function hashContent(buf: Uint8Array): string {
   return createHash("sha256").update(buf as unknown as Buffer).digest("hex");
 }
 
-function stripRoot(p: string): string {
-  while (p.endsWith("/")) p = p.slice(0, -1);
-  return p;
-}
-
 export async function findRoot(start: string): Promise<string | null> {
   let dir = start;
   for (let i = 0; i < 40; i++) {
@@ -147,5 +142,3 @@ export async function scan(cwd: string): Promise<ScanResult> {
     manifest,
   };
 }
-
-export { stripRoot };

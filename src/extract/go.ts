@@ -196,4 +196,4 @@ function walkRoot(root: Node, visit: (n: Node) => void) {
   }
 }
 
-export const isRouteLike = (n: Node) => false;
+
