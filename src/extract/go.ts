@@ -1,23 +1,14 @@
 import type { Node } from "../parse";
 import type { Ctx } from "./core";
-import { addSym, refEdge } from "./core";
+import { addSym, childField, refEdge, walk } from "./core";
 
 const isTestFile = (f: string) => /_test\.go$/.test(f);
-
-function typeSpecName(n: Node): Node | null {
-  // type_spec children: name (type_identifier) + optional value (struct_type/interface_type/alias)
-  for (let i = 0; i < n.namedChildCount; i++) {
-    const c = n.namedChild(i);
-    if (c && (c.type === "identifier" || c.type === "type_identifier")) return c;
-  }
-  return null;
-}
 
 function collectTypeSymbols(ctx: Ctx, typeDecl: Node, fileIsTest: boolean) {
   for (let i = 0; i < typeDecl.namedChildCount; i++) {
     const spec = typeDecl.namedChild(i);
     if (!spec || spec.type !== "type_spec") continue;
-    const nameNode = typeSpecName(spec);
+    const nameNode = childField(spec, "name");
     if (!nameNode) continue;
     const name = nameNode.text;
     const value = spec.namedChildren.find((c) => c.type.endsWith("_type")) ?? spec.namedChildren[spec.namedChildCount - 1];
@@ -59,7 +50,7 @@ function collectTypeSymbols(ctx: Ctx, typeDecl: Node, fileIsTest: boolean) {
 }
 
 function collectFunction(ctx: Ctx, fn: Node, fileIsTest: boolean) {
-  const nameNode = childFieldGo(fn, "name");
+  const nameNode = childField(fn, "name");
   const name = nameNode ? nameNode.text : fn.text.slice(0, 40);
   const isMethod = fn.type === "method_declaration";
   const kind: "function" | "method" = isMethod ? "method" : "function";
@@ -71,7 +62,7 @@ function collectFunction(ctx: Ctx, fn: Node, fileIsTest: boolean) {
   collectCalls(ctx, fn, s.id);
   // interface implementation: receiver field of method carries type name
   if (isMethod) {
-    const recv = childFieldGo(fn, "receiver");
+    const recv = childField(fn, "receiver");
     if (recv) {
       const tid = recv.namedChildren.find((c) => c.type === "type_identifier");
       if (tid) {
@@ -85,17 +76,10 @@ function collectFunction(ctx: Ctx, fn: Node, fileIsTest: boolean) {
   }
 }
 
-function childFieldGo(n: Node, field: string): Node | null {
-  for (let i = 0; i < n.childCount; i++) {
-    if (n.fieldNameForChild(i) === field) return n.child(i);
-  }
-  return null;
-}
-
 function collectCalls(ctx: Ctx, root: Node, fromId: string) {
   for (const n of walk(root)) {
     if (n.type !== "call_expression") continue;
-    const fn = childFieldGo(n, "function");
+    const fn = childField(n, "function");
     if (!fn) continue;
     if (fn.type === "identifier") {
       refEdge(ctx, fromId, n, fn.text, "call", "resolved");
@@ -122,23 +106,12 @@ function collectNameUses(ctx: Ctx, root: Node, fromId: string, kind: "ref" | "te
   }
 }
 
-function walk(n: Node): Node[] {
-  const out: Node[] = [];
-  const stack = [n];
-  while (stack.length) {
-    const c = stack.pop()!;
-    out.push(c);
-    for (let i = c.namedChildCount - 1; i >= 0; i--) stack.push(c.namedChild(i)!);
-  }
-  return out;
-}
-
 export function extractGo(root: Node, ctx: Ctx) {
   const fileIsTest = isTestFile(ctx.file);
   const isEntryFile = /(^|\/)(main\.go|cmd\/)/.test(ctx.file);
   const isConfigFile = /config|settings|env/i.test(ctx.file);
 
-  const walkNode = (n: Node) => {
+  for (const n of walk(root)) {
     switch (n.type) {
       case "import_declaration": {
         const specs = n.namedChildren.flatMap((c) =>
@@ -178,22 +151,10 @@ export function extractGo(root: Node, ctx: Ctx) {
         break;
       }
     }
-  };
-  walkRoot(root, walkNode);
+  }
 
   for (const s of ctx.symbols) {
     if (isEntryFile && s.kind === "function" && s.name === "main") s.kind = "entry";
     if (isConfigFile && s.kind === "const") s.kind = "config";
   }
 }
-
-function walkRoot(root: Node, visit: (n: Node) => void) {
-  const stack = [root];
-  while (stack.length) {
-    const n = stack.pop()!;
-    visit(n);
-    for (let i = n.namedChildCount - 1; i >= 0; i--) stack.push(n.namedChild(i)!);
-  }
-}
-
-

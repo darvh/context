@@ -1,6 +1,6 @@
 import type { Node } from "../parse";
 import type { Ctx } from "./core";
-import { addSym, refEdge } from "./core";
+import { addSym, childField, refEdge, walk } from "./core";
 
 const ROUTE_METHODS = new Set(["get", "post", "put", "patch", "delete", "options", "route"]);
 const ROUTE_BASES = new Set(["app", "bp", "blueprint", "router"]);
@@ -9,22 +9,8 @@ function isTestFile(f: string) {
   return /(^|\/)test_.*\.py$|(^|\/)tests?\//.test(f);
 }
 
-function walk(n: Node): Node[] {
-  const out: Node[] = [];
-  const stack = [n];
-  while (stack.length) {
-    const c = stack.pop()!;
-    out.push(c);
-    for (let i = c.namedChildCount - 1; i >= 0; i--) stack.push(c.namedChild(i)!);
-  }
-  return out;
-}
-
 function nameField(n: Node): Node | null {
-  for (let i = 0; i < n.childCount; i++) {
-    if (n.fieldNameForChild(i) === "name") return n.child(i);
-  }
-  return null;
+  return childField(n, "name");
 }
 
 function callTarget(n: Node): { name: string; qualifier: string; isMember: boolean } {

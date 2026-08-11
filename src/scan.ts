@@ -58,11 +58,16 @@ async function loadIgnore(...roots: string[]): Promise<(p: string, isDir: boolea
   return (p, isDir) => ig.ignores(isDir ? p + "/" : p);
 }
 
-async function collectFiles(root: string, isIgnored: (p: string, d: boolean) => boolean): Promise<string[]> {
+interface IgnoreLayer {
+  dir: string; // rel path of the dir owning this gitignore ("" = tree root)
+  ig: ReturnType<typeof ignore>;
+}
+
+async function collectFiles(root: string, baseIgnored: (p: string, d: boolean) => boolean): Promise<string[]> {
   const out: string[] = [];
-  const stack: string[] = [""];
+  const stack: { rel: string; layers: IgnoreLayer[] }[] = [{ rel: "", layers: [] }];
   while (stack.length) {
-    const rel = stack.pop()!;
+    const { rel, layers } = stack.pop()!;
     const dir = rel ? path.join(root, rel) : root;
     let entries;
     try {
@@ -72,13 +77,29 @@ async function collectFiles(root: string, isIgnored: (p: string, d: boolean) => 
     } catch {
       continue;
     }
+    // nested .gitignore rules are scoped to this dir and its descendants
+    let own = layers;
+    try {
+      const rules = (await fs.readFile(path.join(dir, ".gitignore"), "utf8"))
+        .split(/\r?\n/)
+        .filter((l) => l.trim() && !l.trim().startsWith("#"));
+      if (rules.length) own = [...layers, { dir: rel, ig: ignore().add(rules) }];
+    } catch {}
+    const ignored = (p: string, isDir: boolean): boolean => {
+      if (baseIgnored(p, isDir)) return true;
+      for (const l of own) {
+        const relP = l.dir ? p.slice(l.dir.length + 1) : p;
+        if (l.ig.ignores(isDir ? relP + "/" : relP)) return true;
+      }
+      return false;
+    };
     for (const e of entries) {
       const r = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
-        if (isIgnored(r, true)) continue;
-        stack.push(r);
+        if (ignored(r, true)) continue;
+        stack.push({ rel: r, layers: own });
       } else if (e.isFile() || e.isSymbolicLink()) {
-        if (isIgnored(r, false)) continue;
+        if (ignored(r, false)) continue;
         out.push(r);
       }
     }
