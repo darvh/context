@@ -1,9 +1,24 @@
 # Context benchmark harness
 
 Paired evaluation per `meta/cross-product/context-benchmark-plan.md`. Drives
-**opencode** with **DeepSeek V4 Flash** (`opencode-go/deepseek-v4-flash`),
-billed at **2x usage** — the multiplier is applied to all token and cost
-accounting and is set in `manifest.yaml`.
+**opencode** with **DeepSeek V4 Flash** (`opencode-go/deepseek-v4-flash`).
+
+## Cost accounting (true API pricing)
+
+Token usage is provider-reported via `step_finish`: `tokens.input` is the
+cache-miss input, `tokens.cache.read` the cache-hit input, `tokens.output` the
+output (total = input + cache.read + output). Cost is computed from the price
+schedule in `manifest.yaml`:
+
+```text
+input cache-miss $0.14 / 1M
+input cache-hit  $0.0028 / 1M   (98% off)
+output           $0.28 / 1M     (set output_per_1m to the actual rate)
+cache writes     free
+```
+
+A `usage_multiplier` (2x) applies to reported token counts per the billing
+assumption; costs derive from those tokens at the schedule above.
 
 ## Arms
 

@@ -58,7 +58,7 @@ export async function writeReport(runs: MetricRun[], outDir: string, manifest: {
   metric("time to first relevant (ms, median)", (rs) => med(rs.map((r) => r.firstRelevantMs ?? 0)) ?? "-");
   metric("time to first edit (ms, median)", (rs) => med(rs.map((r) => r.firstEditMs ?? 0)) ?? "-");
   metric("exploration calls before first edit (median)", (rs) => med(rs.map((r) => r.explorationBeforeFirstEdit)) ?? "-");
-  metric("input tokens before first relevant (median)", (rs) => "-"); // not captured per-run
+  metric("input tokens before first relevant (median)", (rs) => med(rs.map((r) => r.inputTokensBeforeFirstRelevant)) ?? "-");
   metric("total input tokens (median)", (rs) => med(rs.map((r) => r.inputTokens)) ?? "-");
   metric("cache hit % (median)", (rs) => med(rs.map((r) => r.cacheHitPct))?.toFixed(1) ?? "-");
   metric("total tokens (median)", (rs) => med(rs.map((r) => r.totalTokens)) ?? "-");

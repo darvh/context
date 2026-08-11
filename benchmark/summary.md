@@ -11,7 +11,7 @@ Token and cost figures below are already multiplied. Token totals are provider-r
 | time to first relevant (ms, median) | 11583.5 | 1271 |
 | time to first edit (ms, median) | 28651.5 | 12192 |
 | exploration calls before first edit (median) | 7 | 4 |
-| input tokens before first relevant (median) | - | - |
+| input tokens before first relevant (median) | 25595 | 0 |
 | total input tokens (median) | 340418 | 176329 |
 | cache hit % (median) | 92.3 | 84.9 |
 | total tokens (median) | 343622 | 178386 |
