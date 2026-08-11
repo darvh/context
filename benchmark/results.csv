@@ -3,7 +3,7 @@ cold,sess-ts,1,ok,true,true,11879,src/session/store.ts,35050,7,4,21654,25670,284
 cold,sess-ts,2,ok,true,true,3869,src/session/store.ts,22253,6,3,21748,24648,1668,141056,167372,0.002177,51347,0,success
 cold,sess-go,1,ok,false,true,11288,internal/session/store.go,46880,7,4,19714,24894,3560,373248,401702,0.003012,102083,0,implementation-or-tests
 cold,sess-go,2,ok,true,true,12689,internal/session/store.go,20792,8,4,22132,27640,5840,546560,580040,0.003723,152240,0,success
-context,sess-ts,1,timeout,,false,,,,0,0,0,0,0,0,0,0.000000,1038573,370,environment
-context,sess-ts,2,timeout,,false,,,,0,0,0,0,0,0,0,0.000000,996639,370,environment
-context,sess-go,1,timeout,,true,1020,internal/session/store.go,8240,4,1,0,25830,3142,188160,217132,0.002720,646975,308,success
-context,sess-go,2,timeout,,false,,,,0,0,0,0,0,0,0,0.000000,964729,308,environment
+context,sess-ts,1,ok,true,true,1342,src/session/store.test.ts,12767,4,1,0,25648,1590,119808,147046,0.002195,48333,370,success
+context,sess-ts,2,ok,true,true,1396,src/session/store.ts,12912,4,1,0,25154,1560,91136,117850,0.002141,29652,370,success
+context,sess-go,1,ok,true,true,1200,internal/session/store.go,10213,2,1,0,25954,2524,181248,209726,0.002450,53655,308,success
+context,sess-go,2,ok,true,true,1029,internal/session/store.go,11617,4,1,0,26708,2756,246784,276248,0.002671,98022,308,success

@@ -38,4 +38,25 @@ describe("context init", () => {
     await expect(fs.access(dir)).rejects.toThrow();
     await fs.rm(repo, { recursive: true, force: true });
   });
+
+  test("hooks: claude-code settings.json gets the adapters", async () => {
+    const repo = path.join(import.meta.dir, "..", "var", "init-hooks-" + Date.now());
+    await fs.mkdir(repo, { recursive: true });
+    const r = await init({ project: true, repo, force: false, dryRun: false, only: ["claude-code"], hooks: true });
+    const cfg = r.find((x) => x.what === "hooks-config");
+    expect(cfg?.status).toBe("updated");
+    expect(cfg?.dir).toContain(".claude/settings.json");
+    const settings = JSON.parse(await fs.readFile(cfg!.dir, "utf8"));
+    expect(settings.hooks.UserPromptSubmit).toContain("hook-user.ts");
+    expect(settings.hooks.Stop).toContain("hook-agent.ts");
+    await fs.rm(repo, { recursive: true, force: true });
+  });
+
+  test("hooks: hosts without wiring report unselected", async () => {
+    const repo = path.join(import.meta.dir, "..", "var", "init-hooks-" + Date.now());
+    await fs.mkdir(repo, { recursive: true });
+    const r = await init({ project: true, repo, force: false, dryRun: false, only: ["opencode"], hooks: true });
+    expect(r.find((x) => x.what === "hooks-config")?.status).toBe("unselected");
+    await fs.rm(repo, { recursive: true, force: true });
+  });
 });

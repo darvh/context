@@ -42,7 +42,7 @@ describe("cache helpers", () => {
   test("writeJson/readJson roundtrip; path helpers are deterministic", async () => {
     const file = path.join(import.meta.dir, "..", "var", "cache-helper-" + Date.now() + ".json");
     await writeJson(file, { a: 1, nested: { b: [1, 2] } });
-    expect(await readJson(file)).toEqual({ a: 1, nested: { b: [1, 2] } });
+    expect(await readJson<{ a: number; nested: { b: number[] } }>(file)).toEqual({ a: 1, nested: { b: [1, 2] } });
     expect(await readJson(file + ".nope")).toBeNull();
     await fs.rm(file, { recursive: true, force: true });
 

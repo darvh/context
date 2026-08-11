@@ -5,15 +5,15 @@ Token and cost figures below are already multiplied. Token totals are provider-r
 
 | metric | cold | context |
 | --- | --- | --- |
-| verified success rate | 0.75 | 0.00 |
-| first-relevant recall | 1.00 | 0.25 |
-| time to first relevant (ms, median) | 11583.5 | 0 |
-| time to first edit (ms, median) | 28651.5 | 0 |
-| exploration calls before first edit (median) | 7 | 0 |
+| verified success rate | 0.75 | 1.00 |
+| first-relevant recall | 1.00 | 1.00 |
+| time to first relevant (ms, median) | 11583.5 | 1271 |
+| time to first edit (ms, median) | 28651.5 | 12192 |
+| exploration calls before first edit (median) | 7 | 4 |
 | input tokens before first relevant (median) | - | - |
-| total input tokens (median) | 25282 | 0 |
-| total tokens (median) | 343622 | 0 |
-| cost USD (sum) | 0.0115 | 0.0027 |
+| total input tokens (median) | 25282 | 25801 |
+| total tokens (median) | 343622 | 178386 |
+| cost USD (sum) | 0.0115 | 0.0095 |
 
 ## Net savings vs cold (per task, median)
 
@@ -24,15 +24,15 @@ net_pct       = net_savings / cold_input
 ```
 
 ### sess-ts
-- gross_input_savings: 25159 (100.0%)
-- net_savings (after capsule): 24789 (98.5%)
-- exploration calls saved: 6.5
+- gross_input_savings: -242 (-1.0%)
+- net_savings (after capsule): -612 (-2.4%)
+- exploration calls saved: 2.5
 - success preserved: yes
 
 ### sess-go
-- gross_input_savings: 13352 (50.8%)
-- net_savings (after capsule): 13044 (49.7%)
-- exploration calls saved: 5.5
+- gross_input_savings: -64 (-0.2%)
+- net_savings (after capsule): -372 (-1.4%)
+- exploration calls saved: 4.5
 - success preserved: yes
 
 Run details in `results.csv`; transcripts in `raw/`.
