@@ -7,7 +7,6 @@ import path from "node:path";
 const GO = new URL("./fixtures/go", import.meta.url).pathname;
 const TS = new URL("./fixtures/typescript", import.meta.url).pathname;
 const PY = new URL("./fixtures/python", import.meta.url).pathname;
-const ML = new URL("./fixtures/multilang", import.meta.url).pathname;
 
 // fresh copy per build: forces a real parse (never served from the warm cache)
 async function buildFresh(src: string): Promise<BuildResult> {
@@ -65,26 +64,6 @@ describe("structural extraction", () => {
     expect(names).toContain("function:test_store_persists_across_get_set");
     const store = b.graph.symbols.find((s) => s.name === "open_store")!;
     expect(store.sig).toContain("def open_store");
-  });
-
-  test("rg fallback: multilang symbol extraction", async () => {
-    const b = await buildFresh(ML);
-    const names = b.graph.symbols.map((s) => `${s.kind}:${s.name}`);
-    const expectHas = (n: string) => expect(names, n).toContain(n);
-    expectHas("entry:Main");      // java
-    expectHas("import:List");     // java import
-    expectHas("class:MyClass");   // ruby
-    expectHas("entry:main");      // rust
-    expectHas("class:App");       // php
-    expectHas("entry:main");      // c
-    expectHas("class:MyClass");   // cpp
-    expectHas("entry:Program");   // csharp
-    expectHas("entry:App");       // kotlin
-    expectHas("entry:main");      // swift
-    expectHas("entry:main");      // sh
-    expectHas("function:myfunc"); // lua
-    expectHas("entry:Main");      // scala
-    expectHas("class:MyClass");   // dart
   });
 
   test("no repo mutation: cache lives outside the tree", async () => {

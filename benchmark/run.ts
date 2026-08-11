@@ -38,15 +38,17 @@ interface CliArgs {
   dry: boolean;
   replay: boolean;
   outDir: string;
+  concurrency: number;
 }
 
 function parseCli(argv: string[]): CliArgs {
-  const a: CliArgs = { arms: [], tasks: [], reps: null, dry: false, replay: false, outDir: BENCH };
+  const a: CliArgs = { arms: [], tasks: [], reps: null, dry: false, replay: false, outDir: BENCH, concurrency: 1 };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
     if (x === "--arms") a.arms = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
     else if (x === "--tasks") a.tasks = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
     else if (x === "--reps") a.reps = Number(argv[++i]);
+    else if (x === "--concurrency" || x === "-j") a.concurrency = Number(argv[++i]) || 1;
     else if (x === "--dry") a.dry = true;
     else if (x === "--replay") a.replay = true;
     else if (x === "--out") a.outDir = argv[++i];
@@ -57,10 +59,12 @@ function parseCli(argv: string[]): CliArgs {
 
 const help = `context bench — paired evaluation via opencode (deepseek-v4-flash, 2x usage)
 
-usage: bun run benchmark/run.ts [--arms cold,context] [--tasks sess-go] [--reps N] [--dry] [--replay] [--out DIR]
+usage: bun run benchmark/run.ts [--arms cold,context] [--tasks sess-go] [--reps N]
+                                [-j N|--concurrency N] [--dry] [--replay] [--out DIR]
 
-  --dry     print the run plan (repos, prompts, verify) without invoking models
-  --replay  rebuild metrics + reports from existing raw transcripts (no model cost)
+  -j, --concurrency N   run up to N cells in parallel (each in its own process group)
+  --dry                 print the run plan (repos, prompts, verify) without invoking models
+  --replay              rebuild metrics + reports from existing raw transcripts (no model cost)
 `;
 
 async function readManifest(): Promise<Manifest> {
