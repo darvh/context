@@ -1,1 +1,0 @@
-{"arm":"cold","task":"sess-ts","rep":1,"status":"ok","capsuleTokens":0,"wallMs":90168,"verifyStatus":true,"verifyOutput":"bun test v1.4.0-canary.1 (f972c287f)\n\n 4 pass\n 0 fail\n 4 expect() calls\nRan 4 tests across 1 file. [5.00ms]\n"}

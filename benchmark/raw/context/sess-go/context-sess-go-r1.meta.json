@@ -1,1 +1,0 @@
-{"arm":"context","task":"sess-go","rep":1,"status":"ok","capsuleTokens":308,"wallMs":53655,"verifyStatus":true,"verifyOutput":"?   \texample.com/sess/cmd/server\t[no test files]\n?   \texample.com/sess/internal/http\t[no test files]\nok  \texample.com/sess/internal/session\t0.093s\n"}

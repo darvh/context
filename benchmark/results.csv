@@ -1,9 +1,0 @@
-arm,task,rep,thinking,status,success,edited_golden,first_relevant_ms,first_relevant_file,first_edit_ms,exploration_before_first_edit,first_relevant_calls,input_before_first_relevant,input_tokens,output_tokens,cache_tokens,input_miss_tokens,cache_hit_pct,total_tokens,cost_usd,wall_ms,capsule_tokens,failure_category
-cold,sess-ts,1,default,ok,true,true,11879,src/session/store.ts,35050,7,4,25494,282694,2848,257024,25670,90.9,285542,0.005111,90168,0,success
-cold,sess-ts,2,default,ok,true,true,3869,src/session/store.ts,22253,6,3,25588,165704,1668,141056,24648,85.1,167372,0.004313,51347,0,success
-cold,sess-go,1,default,ok,false,true,11288,internal/session/store.go,46880,7,4,25602,398142,3560,373248,24894,93.7,401702,0.005527,102083,0,implementation-or-tests
-cold,sess-go,2,default,ok,true,true,12689,internal/session/store.go,20792,8,4,51316,574200,5840,546560,27640,95.2,580040,0.007035,152240,0,success
-context,sess-ts,1,default,ok,true,true,1342,src/session/store.test.ts,12767,4,1,0,145456,1590,119808,25648,82.4,147046,0.004371,48333,370,success
-context,sess-ts,2,default,ok,true,true,1396,src/session/store.ts,12912,4,1,0,116290,1560,91136,25154,78.4,117850,0.004214,29652,370,success
-context,sess-go,1,default,ok,true,true,1200,internal/session/store.go,10213,2,1,0,207202,2524,181248,25954,87.5,209726,0.004848,53655,308,success
-context,sess-go,2,default,ok,true,true,1029,internal/session/store.go,11617,4,1,0,273492,2756,246784,26708,90.2,276248,0.005202,98022,308,success
