@@ -60,6 +60,22 @@ Token accounting is provider-reported via `step_finish` events. All values are
 already `x2` per the usage multiplier. `summary.md` reports medians; individual
 runs live in `results.csv`; every miss is classified in `failure-analysis.md`.
 
+## Repo ownership and portability
+
+- **proof bench lives in the `proof` repo** (`proof/bench`, `proofbench`); **context
+  bench lives in the `context` repo** (`benchmark/`). They are separate products
+  with separate harnesses.
+- **The final combined (context + proof) comparison and its reports live ONLY
+  in the `context` repo.** The proof repo's bench stays self-contained.
+- Cross-system: no hardcoded paths in committed code — everything resolves via
+  `import.meta.dir`, `homedir()`, `XDG_*`, or relative paths, so a fresh
+  `git clone` works anywhere. Scratch/jobs/cache live under the OS cache dir,
+  never in the repo. API keys are never written to the repo (scrubbed in place,
+  guarded).
+- A note to honor: if the combined arm proves out, do not migrate proof's
+  harness into context or vice versa — keep them in their home repos and
+  publish only the final paired comparison here.
+
 ## Frozen-fixture note
 
 `manifest.yaml` ships two **sample** tasks on the spike fixtures so the harness

@@ -63,10 +63,11 @@ arms:
         --agent opencode --model opencode-go/deepseek-v4-flash \
         --n-concurrent 1 -y --jobs-dir <out>/harbor-jobs
     enabled: true
-  context:
+  proof:
+    label: harbor + opencode + Proof strategy (instruction-level; binary-in-container pending)
+    enabled: true
+  context: # capsule injection wrapper is WIP
     label: harbor + opencode + Context capsule
-    # Needs a custom harbor agent wrapper that runs `context prepare` in the
-    # container and prepends the capsule to the opencode prompt. WIP.
     enabled: false
 
 # Notes

@@ -26,13 +26,14 @@ const BENCH = import.meta.dir;
 const OUT = path.join(BENCH, "raw", "harbor");
 
 function parse(argv: string[]) {
-  const a: { arm: string; dry: boolean; reps: number | null; out: string; tasks: string[]; variant: string } = {
+  const a: { arm: string; dry: boolean; reps: number | null; out: string; tasks: string[]; variant: string; split: boolean } = {
     arm: "cold",
     dry: false,
     reps: null,
     out: OUT,
     tasks: [],
     variant: "high",
+    split: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
@@ -42,7 +43,12 @@ function parse(argv: string[]) {
     else if (x === "--reps") a.reps = Number(argv[++i]);
     else if (x === "--out") a.out = argv[++i];
     else if (x === "--tasks") a.tasks = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
+    else if (x === "--split") a.split = true;
     else if (x === "--help") { console.log(help); process.exit(0); }
+  }
+  if (a.arm !== "cold" && a.arm !== "proof") {
+    console.error(`[harbor] arm must be cold|proof (got "${a.arm}")`);
+    process.exit(1);
   }
   if (a.variant !== "high" && a.variant !== "max") {
     console.error(`[harbor] variant must be high or max (got "${a.variant}")`);
@@ -66,6 +72,10 @@ function opencodeGoKey(): string | null {
   }
 }
 
+function cacheBaseFor(): string {
+  return process.env.XDG_CACHE_HOME ?? path.join(homedir(), ".cache");
+}
+
 export async function main(argv: string[]) {
   const a = parse(argv);
   const raw = await fs.readFile(path.join(BENCH, "tb21-fixture.yaml"), "utf8");
@@ -86,11 +96,33 @@ export async function main(argv: string[]) {
     console.error("[harbor] opencode-go API key not found in ~/.local/share/opencode/auth.json");
     process.exit(1);
   }
+  // --split: one monitored, independently-stoppable harbor job per task.
+  if (a.split && tasks.length > 1) {
+    for (const t of tasks) {
+      const id = `${a.arm}-${t}`;
+      const log = path.join(cacheBaseFor(), "context", "bench", `${id}.log`);
+      await fs.mkdir(path.dirname(log), { recursive: true });
+      const child = Bun.spawn({
+        cmd: ["bun", "run", "benchmark/harbor.ts", "--tasks", t, "--arm", a.arm, "--variant", a.variant, ...(a.reps ? ["--reps", String(a.reps)] : []), "--out", a.out, ...(a.dry ? ["--dry-run"] : [])],
+        cwd: path.join(import.meta.dir, ".."),
+        detached: true,
+        stdout: Bun.file(log),
+        stderr: Bun.file(log),
+      });
+      child.unref();
+      const { register } = await import("./monitor");
+      await register({ id, task: t, arm: a.arm as "cold" | "proof", pid: child.pid, outputLog: log, jobsDir: "" });
+      console.log(`[harbor] split: ${id} pid=${child.pid} log=${log}`);
+    }
+    console.log(`[harbor] ${tasks.length} jobs launched; monitor with: bun run benchmark/monitor.ts status`);
+    return;
+  }
+
   const reps = a.reps ?? fx.model.reps;
   // Jobs run OUTSIDE the repo: harbor writes the resolved config (with the
   // plaintext apiKey) into the job dir. Only sanitized results are copied back.
   const cacheBase = process.env.XDG_CACHE_HOME ?? path.join(homedir(), ".cache");
-  const jobsDir = path.join(cacheBase, "context", "harbor", a.arm);
+  const jobsDir = path.join(cacheBase, "context", "harbor", a.arm, tasks.join("_"));
   const repoOut = path.join(a.out, a.arm);
 
   const variant = a.variant; // always set: high|max only
@@ -123,7 +155,10 @@ export async function main(argv: string[]) {
       },
     ],
   };
-  const cfgPath = path.join(process.env.XDG_CACHE_HOME ?? path.join(homedir(), ".cache"), "context", "harbor-job-config.yaml");
+  const id = `${a.arm}-${tasks.join("_")}`;
+  // Per-run config path: split children must never share one (they'd
+  // overwrite each other's job config mid-flight).
+  const cfgPath = path.join(cacheBase, "context", "bench", `${id}.config.json`);
   await fs.mkdir(path.dirname(cfgPath), { recursive: true });
   await fs.writeFile(cfgPath, JSON.stringify(cfg, null, 2));
 
@@ -136,11 +171,21 @@ export async function main(argv: string[]) {
   }
   await fs.rm(jobsDir, { recursive: true, force: true });
 
-  const p = Bun.spawn({ cmd: ["harbor", "run", "--config", cfgPath], env: { ...process.env, OPENCODE_GO_API_KEY: key }, stdout: "inherit", stderr: "inherit" });
+  const { register, heartbeat, setStatus } = await import("./monitor");
+  const log = path.join(cacheBase, "context", "bench", `${id}.log`);
+  await fs.mkdir(path.dirname(log), { recursive: true });
+  await register({ id, task: tasks.join("_"), arm: a.arm as "cold" | "proof", pid: process.pid, outputLog: log, jobsDir });
+
+  const p = Bun.spawn({ cmd: ["harbor", "run", "--config", cfgPath], env: { ...process.env, OPENCODE_GO_API_KEY: key }, stdout: Bun.file(log), stderr: Bun.file(log) });
+  const hb = setInterval(() => heartbeat(id).catch(() => {}), 30_000);
   const code = await p.exited;
+  clearInterval(hb);
+  await heartbeat(id);
 
   await copySanitized(jobsDir, repoOut, key);
   await fs.chmod(cfgPath, 0o600);
+  await setStatus(id, code === 0 ? "done" : "error", code === 0 ? undefined : `harbor exit ${code}`);
+  console.log(`[harbor] ${id} finished exit=${code}`);
   process.exit(code ?? 0);
 }
 
