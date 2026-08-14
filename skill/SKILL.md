@@ -1,3 +1,8 @@
+---
+name: context
+description: Deterministic repository discovery for coding agents. Use before non-trivial repository work to find relevant files and symbols.
+---
+
 # Context skill
 
 Host-neutral. One call at the start of non-trivial repository work.

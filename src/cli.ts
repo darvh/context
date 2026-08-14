@@ -18,7 +18,7 @@ usage:
   context expand <handle|file:line> [--root DIR]
   context impact <symbol|--diff> [--json] [--root DIR]
                [--ignore pat[,pat]] [--no-gitignore]
-  context init [--targets all|opencode,claude-code,codex,cursor,copilot,antigravity]
+  context init [--targets all|opencode,claude-code,codex,cursor,copilot,antigravity,pi]
                [--project] [--force] [--dry-run] [--hooks]
   context --help
 

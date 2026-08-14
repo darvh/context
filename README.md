@@ -32,7 +32,13 @@ Add `--hooks` to wire the Claude Code adapters. The installer requires Bun.
 ### From a checkout
 
 ```bash
-bun run src/cli.ts init --project
+bun run install:local
+```
+
+Forward installer options after `--`, for example:
+
+```bash
+bun run install:local -- --targets pi --force
 ```
 
 `context init` installs the host-neutral skill into each agent's skill
@@ -42,6 +48,18 @@ copilot, antigravity, pi), user or project scope. Idempotent: identical copies a
 dirs are reported and never created silently. `--hooks` additionally wires the
 UserPromptSubmit + agent-response hook adapters (claude-code settings today) —
 explicit opt-in, never silent.
+
+## Releases
+
+Push a semantic version tag such as `v0.1.0`, or run the Release workflow from
+`main` with a tag input. The workflow publishes one ZIP per supported target:
+
+- Linux x64 and arm64
+- macOS x64 and arm64
+- Windows x64
+
+Each ZIP contains the standalone `context` binary and its `grammars/` directory,
+plus a `.sha256` checksum file.
 
 ## Development
 

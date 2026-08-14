@@ -110,7 +110,7 @@ async function collectFiles(root: string, baseIgnored: (p: string, d: boolean) =
       if (e.isDirectory()) {
         if (ignored(r, true)) continue;
         stack.push({ rel: r, layers: own });
-      } else if (e.isFile() || e.isSymbolicLink()) {
+      } else if (e.isFile()) {
         if (ignored(r, false)) continue;
         out.push(r);
       }

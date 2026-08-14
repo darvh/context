@@ -12,7 +12,7 @@ const TARGETS = [
   { name: "cursor", home: "~/.cursor/skills", project: ".cursor/skills" },
   { name: "copilot", home: "~/.agents/skills", project: ".agents/skills" },
   { name: "antigravity", home: "~/.agents/skills", project: ".agents/skills" },
-  { name: "pi", home: "~/.pi/agent/skills", project: ".pi/skills" },
+  { name: "pi", home: "~/.agents/skills", project: ".agents/skills" },
 ];
 
 type Status = "installed" | "up-to-date" | "updated" | "conflict" | "agent-miss" | "unselected" | "error";
@@ -43,7 +43,8 @@ function resolveAgent(t: (typeof TARGETS)[number], opts: InitOptions): string {
 }
 
 export function agentPaths(opts: InitOptions): string[] {
-  return TARGETS.map((t) => resolveAgent(t, opts));
+  const agents = opts.only.length ? TARGETS.filter((t) => opts.only.includes(t.name)) : TARGETS;
+  return agents.map((t) => resolveAgent(t, opts));
 }
 
 async function fileEq(a: string, b: string): Promise<boolean> {

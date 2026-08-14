@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "bun run src/cli.ts",
+    "install:local": "bash install.sh --local",
     "spike": "bun run spike/bench.ts",
     "bench": "bun run benchmark/run.ts",
     "bench:replay": "bun run benchmark/run.ts --replay",
@@ -16,7 +17,7 @@
     "monitor:agent": "bun run benchmark/monitor-agent.ts",
     "tb": "bun run benchmark/harbor.ts",
     "grammars": "bun run scripts/embed-grammars.ts",
-    "build": "bun run scripts/embed-grammars.ts && mkdir -p dist && bun build --compile src/cli.ts --outfile dist/context",
+    "build": "bun run scripts/embed-grammars.ts && mkdir -p dist && bun run scripts/package.ts && bun build --compile src/cli.ts --outfile dist/context",
     "test": "bun test"
   },
   "dependencies": {

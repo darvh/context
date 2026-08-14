@@ -46,7 +46,10 @@ export async function resolveExpand(root: string, handle: string): Promise<Expan
   // handle may be file:line or symbol name
   const loc = /^(.+):(\d+)$/.exec(handle);
   if (loc) {
-    const p = path.resolve(root, loc[1]);
+    const base = path.resolve(root);
+    const p = path.resolve(base, loc[1]);
+    const rel = path.relative(base, p);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
     return expandFile(p, Number(loc[2]));
   }
   const capsule = await readJson<Capsule>(lastCapsulePath());

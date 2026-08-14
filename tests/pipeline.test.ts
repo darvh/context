@@ -32,6 +32,11 @@ describe("expand", () => {
     expect(e).not.toBeNull();
     expect(e!.lines.some((l) => l.includes("func OpenStore"))).toBe(true);
   });
+
+  test("rejects file:line paths outside the requested root", async () => {
+    const e = await resolveExpand(GO, "/etc/hosts:1");
+    expect(e).toBeNull();
+  });
 });
 
 describe("impact", () => {

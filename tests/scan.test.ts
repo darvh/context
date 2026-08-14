@@ -17,6 +17,16 @@ async function setup() {
 }
 
 describe("scan ignore override", () => {
+  test("does not include symbolic links", async () => {
+    const root = await setup();
+    try {
+      await fs.symlink("/etc/hosts", path.join(root, "lib", "external.ts"));
+      expect((await scan(root)).files).not.toContain("lib/external.ts");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("defaults respect gitignore", async () => {
     const root = await setup();
     try {
