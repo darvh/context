@@ -14,13 +14,30 @@ plain external content-addressed cache, deterministic lexical + graph ranking.
 context prepare "<task>" [--budget N] [--json] [--root DIR]
 context expand <handle|file:line>
 context impact <symbol|--diff> [--json]
-context init [--targets all|opencode,claude-code,codex,cursor,copilot,antigravity]
+context init [--targets all|opencode,claude-code,codex,cursor,copilot,antigravity,pi]
              [--project] [--force] [--dry-run] [--hooks]
+```
+
+## Install
+
+### macOS, Linux, or WSL
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/darvh/context/main/install.sh | bash
+```
+
+Useful flags: `--local`, `--targets <agents>`, `--force`, and `--dry-run`.
+Add `--hooks` to wire the Claude Code adapters. The installer requires Bun.
+
+### From a checkout
+
+```bash
+bun run src/cli.ts init --project
 ```
 
 `context init` installs the host-neutral skill into each agent's skill
 directory (same matrix as proof: opencode, claude-code, codex, cursor,
-copilot, antigravity), user or project scope. Idempotent: identical copies are
+copilot, antigravity, pi), user or project scope. Idempotent: identical copies are
 `up-to-date`, conflicts are skipped unless `--force`, absent home-scope agent
 dirs are reported and never created silently. `--hooks` additionally wires the
 UserPromptSubmit + agent-response hook adapters (claude-code settings today) —
@@ -30,10 +47,10 @@ explicit opt-in, never silent.
 
 ```text
 bun install
-bun run src/cli.ts prepare "where is session persistence handled?" --root <repo>
+bun run context prepare "where is session persistence handled?" --root <repo>
 bun test
 bun run spike          # feasibility benchmark -> spike/results.json
-bun run build          # standalone binary -> ./context-bin
+bun run build          # standalone binary -> ./dist/context
 ```
 
 Cache lives in `$XDG_CACHE_HOME/context` (default `~/.cache/context`), keyed
@@ -50,9 +67,9 @@ edits (staged, unstaged, untracked) are visible on the next call.
 
 ## Hooks (host adapters, both fail open)
 
-- `bin/hook-user.ts` — UserPromptSubmit: injects one compact capsule per
+- `scripts/hook-user.ts` — UserPromptSubmit: injects one compact capsule per
   (task, working-tree) pair; never rewrites commands or mutates the repo.
-- `bin/hook-agent.ts` — agent-response (Claude Code `Stop`): reads the
+- `scripts/hook-agent.ts` — agent-response (Claude Code `Stop`): reads the
   projected savings the user hook stored and emits a Graft-style
   `~X tokens saved (Y%, net ~Z after capsule)` line. **User-visible only** —
   it is telemetry, never injected back into the model context.
