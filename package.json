@@ -5,7 +5,7 @@
   "type": "module",
   "module": "src/cli.ts",
   "bin": {
-    "context": "./bin/context.ts"
+    "context": "./src/cli.ts"
   },
   "scripts": {
     "start": "bun run src/cli.ts",
@@ -16,7 +16,7 @@
     "monitor:agent": "bun run benchmark/monitor-agent.ts",
     "tb": "bun run benchmark/harbor.ts",
     "grammars": "bun run scripts/embed-grammars.ts",
-    "build": "bun run scripts/embed-grammars.ts && bun build --compile src/cli.ts --outfile context-bin",
+    "build": "bun run scripts/embed-grammars.ts && mkdir -p dist && bun build --compile src/cli.ts --outfile dist/context",
     "test": "bun test"
   },
   "dependencies": {

@@ -12,6 +12,7 @@ const TARGETS = [
   { name: "cursor", home: "~/.cursor/skills", project: ".cursor/skills" },
   { name: "copilot", home: "~/.agents/skills", project: ".agents/skills" },
   { name: "antigravity", home: "~/.agents/skills", project: ".agents/skills" },
+  { name: "pi", home: "~/.pi/agent/skills", project: ".pi/skills" },
 ];
 
 type Status = "installed" | "up-to-date" | "updated" | "conflict" | "agent-miss" | "unselected" | "error";
@@ -97,8 +98,8 @@ export async function init(opts: InitOptions): Promise<InitResult[]> {
 async function installHooks(opts: InitOptions): Promise<InitResult[]> {
   const out: InitResult[] = [];
   const repo = path.join(import.meta.dir, "..");
-  const userHook = `bun run ${path.join(repo, "bin", "hook-user.ts")}`;
-  const agentHook = `bun run ${path.join(repo, "bin", "hook-agent.ts")}`;
+  const userHook = `bun run ${path.join(repo, "scripts", "hook-user.ts")}`;
+  const agentHook = `bun run ${path.join(repo, "scripts", "hook-agent.ts")}`;
 
   for (const t of TARGETS) {
     if (opts.only.length && !opts.only.includes(t.name)) continue;

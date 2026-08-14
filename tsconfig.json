@@ -11,6 +11,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "spike/src", "tests", "scripts", "bin"],
+  "include": ["src", "spike/src", "tests", "scripts"],
   "exclude": ["spike/fixtures", "tests/fixtures", "var", "node_modules", "spike/grammars"]
 }

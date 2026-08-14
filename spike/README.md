@@ -27,7 +27,7 @@ language with tests, routes, entry points, and cross-file references.
 
 ```text
 bun run spike            # runs bench.ts -> spike/results.json
-bun run build            # compile standalone binary -> ./context-bin
+bun run build            # compile standalone binary -> ./dist/context
 ```
 
 ## Budgets (from spike.md, provisional)

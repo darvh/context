@@ -168,3 +168,7 @@ export async function main(argv: string[]) {
     process.exit(1);
   }
 }
+
+if (import.meta.main) {
+  await main(process.argv.slice(2));
+}

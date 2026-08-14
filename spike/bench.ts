@@ -167,7 +167,7 @@ async function main(): Promise<void> {
         const emb = Bun.spawn({ cmd: ["bun", "run", "scripts/embed-grammars.ts"], cwd: path.join(here, ".."), stdout: "pipe", stderr: "pipe" });
         await emb.exited;
       }
-      const outfile = path.join(here, "context-bin");
+      const outfile = path.join(here, "dist", "context");
       await fs.rm(outfile, { force: true });
       const comp = Bun.spawn({
         cmd: ["bun", "build", "--compile", "src/cli.ts", "--outfile", outfile],
