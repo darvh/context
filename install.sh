@@ -58,11 +58,11 @@ acquire_source() {
   if valid_source; then return; fi
   command -v git >/dev/null 2>&1 || { echo "context: source fallback requires git" >&2; exit 1; }
   [[ -n "$tmp_dir" ]] || tmp_dir="$(mktemp -d)"
-  git clone --depth 1 https://github.com/darvh/context.git "$tmp_dir/context" >/dev/null 2>&1 || {
+  git clone --depth 1 https://github.com/darvh/context.git "$tmp_dir/source" >/dev/null 2>&1 || {
     echo "context: source clone failed" >&2
     exit 1
   }
-  source_dir="$tmp_dir/context"
+  source_dir="$tmp_dir/source"
 }
 
 install_from_source() {
@@ -115,10 +115,10 @@ install_from_release() {
   local asset="context-${tag}-${platform}.zip"
   local archive="$tmp_dir/$asset"
   curl -fL --silent --show-error "https://github.com/darvh/context/releases/download/${tag}/${asset}" -o "$archive" || return 1
-  rm -rf "$install_root"
-  mkdir -p "$(dirname "$install_root")"
   unzip -q "$archive" -d "$tmp_dir/extract"
   [[ -d "$tmp_dir/extract/context/dist" && -f "$tmp_dir/extract/context/skill/SKILL.md" ]] || return 1
+  rm -rf "$install_root"
+  mkdir -p "$(dirname "$install_root")"
   mv "$tmp_dir/extract/context" "$install_root"
   mkdir -p "$bin_dir"
   cat > "$bin_dir/context" <<EOF

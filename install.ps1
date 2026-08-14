@@ -32,10 +32,14 @@ $temp = $null
 function Acquire-Source {
   if ($source -and (Test-Path (Join-Path $source "package.json")) -and (Test-Path (Join-Path $source "skill\SKILL.md"))) { return }
   if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "context: source fallback requires git" }
-  $script:temp = Join-Path ([System.IO.Path]::GetTempPath()) ("context-install-" + [guid]::NewGuid())
-  & git clone --depth 1 https://github.com/darvh/context.git $script:temp | Out-Null
+  if (-not $script:temp) {
+    $script:temp = Join-Path ([System.IO.Path]::GetTempPath()) ("context-install-" + [guid]::NewGuid())
+    New-Item -ItemType Directory -Force -Path $script:temp | Out-Null
+  }
+  $clone = Join-Path $script:temp "source"
+  & git clone --depth 1 https://github.com/darvh/context.git $clone | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "context: source clone failed" }
-  $script:source = $script:temp
+  $script:source = $clone
 }
 
 function Install-Source {
@@ -70,9 +74,13 @@ function Install-Release {
     if (-not $tag) { $tag = (Invoke-RestMethod https://api.github.com/repos/darvh/context/releases/latest).tag_name }
     if ($tag -notmatch '^v\d+\.\d+\.\d+$') { return $false }
     $asset = "context-$tag-windows-x64.zip"
-    $archive = Join-Path ([System.IO.Path]::GetTempPath()) ("context-$([guid]::NewGuid()).zip")
+    if (-not $script:temp) {
+      $script:temp = Join-Path ([System.IO.Path]::GetTempPath()) ("context-install-" + [guid]::NewGuid())
+      New-Item -ItemType Directory -Force -Path $script:temp | Out-Null
+    }
+    $archive = Join-Path $script:temp $asset
     Invoke-WebRequest "https://github.com/darvh/context/releases/download/$tag/$asset" -OutFile $archive
-    $extract = Join-Path ([System.IO.Path]::GetTempPath()) ("context-extract-" + [guid]::NewGuid())
+    $extract = Join-Path $script:temp "extract"
     Expand-Archive -Path $archive -DestinationPath $extract
     $runtime = Join-Path $extract "context"
     if (-not (Test-Path (Join-Path $runtime "dist\context.exe"))) { return $false }
@@ -82,7 +90,9 @@ function Install-Release {
     New-Item -ItemType Directory -Force -Path $binDir | Out-Null
     Set-Content (Join-Path $binDir "context.ps1") "& `"$installRoot\dist\context.exe`" `$args"
     Set-Content (Join-Path $binDir "context.cmd") "@echo off`r`n`"$installRoot\dist\context.exe`" %*"
-    & (Join-Path $installRoot "dist\context.exe") init --targets $targets $(if ($force) { "--force" })
+    $init = @("init", "--targets", $targets)
+    if ($force) { $init += "--force" }
+    & (Join-Path $installRoot "dist\context.exe") $init
     return $true
   } catch {
     return $false
@@ -92,7 +102,10 @@ function Install-Release {
 try {
   if ($dryRun) {
     Write-Host "context install (scope: $mode, targets: $targets, platform: windows-x64)"
-    if ($mode -eq "global") { Write-Host "  release asset: context-$($version ? $version : 'latest')-windows-x64.zip" }
+    if ($mode -eq "global") {
+      $displayVersion = if ($version) { $version } else { "latest" }
+      Write-Host "  release asset: context-$displayVersion-windows-x64.zip"
+    }
     if ($hooks) { Write-Host "  hooks: source fallback required" }
   } elseif ($mode -eq "local" -or $hooks) {
     Install-Source

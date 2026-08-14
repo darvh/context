@@ -26,8 +26,11 @@ context init [--targets all|opencode,claude-code,codex,cursor,copilot,antigravit
 curl -fsSL https://raw.githubusercontent.com/darvh/context/main/install.sh | bash
 ```
 
-Useful flags: `--local`, `--targets <agents>`, `--force`, and `--dry-run`.
-Add `--hooks` to wire the Claude Code adapters. The installer requires Bun.
+The installer selects the matching release ZIP for the current OS and
+architecture. If no release is available, it falls back to a source install
+and requires Bun. Useful flags: `--local`, `--targets <agents>`,
+`--version <tag>`, `--force`, and `--dry-run`. Add `--hooks` to force the
+source path and wire the Claude Code adapters.
 
 ### From a checkout
 
