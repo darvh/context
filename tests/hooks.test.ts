@@ -10,6 +10,7 @@ import type { Capsule } from "../src/assemble";
 import type { BuildResult } from "../src/build";
 
 const GO = new URL("./fixtures/go", import.meta.url).pathname;
+const TS = new URL("./fixtures/typescript", import.meta.url).pathname;
 
 describe("user hook", () => {
   test("short prompts are skipped (no injection)", async () => {
@@ -48,7 +49,8 @@ describe("cache helpers", () => {
 
     expect(repoKey(GO)).toMatch(/^[0-9a-f]{12}$/);
     expect(cachePathFor(GO)).toContain(repoKey(GO));
-    expect(lastCapsulePath()).toContain(".cache/context");
+    expect(lastCapsulePath(GO)).toContain(".cache/context");
+    expect(lastCapsulePath(GO)).not.toBe(lastCapsulePath(TS));
   });
 
   test("writeCache/loadCache reject a stale version", async () => {
@@ -58,6 +60,7 @@ describe("cache helpers", () => {
       manifest: {},
       files: [],
       graph: { symbols: [], edges: [], imports: [] },
+      docs: [],
     };
     await writeCache(GO, rec);
     expect(await loadCache(GO)).toBeNull();
@@ -68,11 +71,13 @@ describe("savings", () => {
   test("projectSavings counts cold spans; formatSavings is one line", async () => {
     const { build } = await import("../src/build");
     const b: BuildResult = await build(GO);
+    const bm25 = b.graph.symbols.length ? (await import("../src/bm25")).buildBm25Index(b.graph) : undefined;
     const hits = (await import("../src/query")).rankSymbols({
       task: "session persistence",
       graph: b.graph,
       changed: new Set(),
       explicitFiles: [],
+      bm25,
     });
     const capsule: Capsule = (await import("../src/assemble")).assemble({
       task: "session persistence",

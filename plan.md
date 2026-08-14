@@ -3,96 +3,94 @@
 ## Current position
 
 Context is a deterministic repository-discovery compiler. It scans a repository,
-extracts symbols and relationships, ranks relevant code, and emits a compact
-navigation capsule for an agent.
+extracts symbols and relationships, ranks relevant code and documents, and emits
+a compact navigation capsule for an agent.
 
-The immediate hardening pass is complete:
+The original five phases are implemented in the working tree. The foundation
+now includes:
 
-- Pi uses the shared `~/.agents/skills` and `.agents/skills` locations.
-- Repository-boundary checks reject `context expand` paths outside the requested root.
-- Symbolic links are excluded from scans.
-- Selected-agent reporting is scoped to the selected targets.
-- Regression coverage now includes path traversal and symbolic links.
-- Current verification: `36 pass, 0 fail`.
+- repository-scoped, atomic, fail-open cache and hook state;
+- validated CLI targets, cross-platform installers, and a source fallback when
+  the standalone Bun binary cannot run;
+- a reproducible retrieval evaluation harness;
+- graph and lexical ranking with SQLite FTS5/BM25;
+- local, opt-in semantic fallback;
+- text extraction for Markdown, office documents, OpenDocument, RTF, EPUB, and
+  PDF files; and
+- configuration stored outside the repository.
 
-## Phase 1 — Cache and hook safety
+The next work should improve demonstrated user outcomes, not add more retrieval
+machinery by default.
 
-Make Context safe when several repositories or agents run at the same time.
+## Vector 1 — Release and runtime parity
 
-- Scope cache, capsule, and hook state by repository identity and session.
-- Use unique temporary filenames for atomic writes.
-- Treat cache failure as a recoverable condition; discovery should still return a
-  capsule when the cache directory is unavailable.
-- Ensure hook timeout paths clear timers and emit valid fail-open output.
-- Add tests for concurrent writes, unwritable cache directories, and two repos
-  using the same agent account.
+Source-level tests are not enough if an installed launcher or compiled artifact
+can run older or behaviorally different code.
 
-Done when concurrent runs do not overwrite each other and a cache failure does
-not fail the user request.
+- Add build identity and cache-schema information to `context --version`.
+- Test the built artifact and installed launcher, not only `src/cli.ts`.
+- Run cache-failure, concurrent-write, initialization, and `prepare` smoke tests
+  against a clean local installation.
+- Make semantic support consistent across the compiled and Bun-source runtimes,
+  or make the supported runtime boundary explicit and test it.
 
-## Phase 2 — CLI and distribution reliability
+Done when a clean checkout can build, install, and run the same verified feature
+set, and the installed command passes the fail-open cache test.
 
-- Validate `--targets` and fail clearly on unknown agent names.
-- Keep CLI help, README, installers, and the target matrix synchronized.
-- Remove package scripts for deleted benchmark files, or restore the benchmark
-  entrypoints deliberately.
-- Make the installed command self-test the compiled binary and fall back to the
-  Bun source entrypoint when the host cannot execute compiled Bun binaries.
-- Test Bash and PowerShell installers in dry-run and local project modes.
-- Reduce unused language dependencies or document why each remains installed.
+## Vector 2 — Evaluation credibility
 
-Done when a fresh checkout can install, initialize, and run `prepare` on a clean
-machine with a clear fallback when standalone binaries are unavailable.
+The fixture suite is useful for regression testing, but its near-perfect scores
+do not establish retrieval quality on unfamiliar repositories.
 
-## Phase 3 — Retrieval evaluation
+- Build a small, reviewed task set from pinned revisions of real repositories
+  and real documents.
+- Record expected files and symbols, query type, acceptable top-`k`, and why each
+  answer is relevant.
+- Report baseline, BM25, and semantic results on the same corpus, including
+  per-task regressions rather than only aggregate scores.
+- Keep a fast, deterministic subset in CI and publish the heavier benchmark's
+  corpus manifest, seed, environment, and raw results.
+- Measure capsule usefulness with agent tasks in addition to retrieval metrics;
+  Recall@5 and MRR are proxies, not the product outcome.
 
-Before adding semantic retrieval, create a small golden evaluation set from real
-repositories.
+Done when a retrieval change can be accepted or rejected from reproducible
+real-data evidence, with no unexplained regression on authoritative path,
+symbol, or changed-file queries.
 
-Each task should record:
+## Vector 3 — Hard-query retrieval
 
-- expected files and symbols;
-- whether the task names a path, symbol, concept, or change;
-- acceptable top-`k` results;
-- cold and warm latency;
-- false-positive and empty-result behavior.
+Use the real-data benchmark's misses to drive improvements. The known weak
+slices are disjoint paraphrases and long, cross-format documents.
 
-Track `Recall@5`, `MRR`, p50/p95 latency, index size, and cache hit rate. Include
-paraphrased tasks such as “where does the app remember values after restart?”
-and explicit path queries.
+- Preserve a failure corpus for every confirmed miss before changing ranking.
+- Index long documents by bounded sections or pages instead of one truncated
+  record, while retaining source locations for expansion.
+- Compare query routing, record construction, and small local embedding models
+  on the hard slices before changing the default model.
+- Keep graph, explicit-path, and changed-file evidence authoritative; semantic
+  matches remain a fallback.
+- Ship only changes that improve the target slice within declared latency,
+  memory, and index-size budgets.
 
-Done when retrieval changes can be compared against a fixed baseline.
+Done when the hard slices improve on the pinned real corpus without degrading
+deterministic queries or making network access mandatory.
 
-## Phase 4 — Hybrid local retrieval
+## Vector 4 — Scale and incremental correctness
 
-Add sparse retrieval before embeddings.
+Measure behavior on repositories large enough to expose resource and
+invalidation problems.
 
-- Index one row per symbol or meaningful declaration.
-- Store name, path, signature, documentation, kind, and language.
-- Use SQLite FTS5 with BM25 for lexical ranking.
-- Fuse lexical rank with the existing graph, changed-file, explicit-path, and
-  entry-point signals.
-- Preserve deterministic output and expose the reason for each ranking signal.
+- Track cold and warm p50/p95 latency, peak memory, cache size, index size, and
+  document-conversion time by repository size.
+- Reuse extracted documents by content identity, not only size and modification
+  time, so same-size or timestamp-preserving edits cannot leave stale text.
+- Bound parsing, conversion, and semantic work independently; cancellation and
+  timeout paths must still emit valid fail-open output.
+- Add a large-repository regression fixture that exercises incremental code and
+  document updates without relying on live downloads.
 
-Do not build a generated-answer RAG layer. Context should retrieve and assemble;
-the agent should reason over the capsule.
-
-Done when hybrid retrieval improves the evaluation set without exceeding the
-latency and size budgets.
-
-## Phase 5 — Optional semantic fallback
-
-Only add embeddings if Phase 3 shows that hybrid lexical retrieval misses useful
-paraphrases.
-
-- Run embeddings only for unresolved or low-confidence queries.
-- Embed symbol-level records, not arbitrary large file chunks.
-- Keep the model optional and local; do not require a hosted API.
-- Version the model and embedding schema in the cache key.
-- Make privacy, model download size, latency, and failure behavior explicit.
-
-Semantic retrieval is a fallback signal, not the primary source of truth. Graph
-relationships, paths, changes, and source evidence remain authoritative.
+Done when published budgets hold on the pinned large corpus and every content
+change invalidates the relevant cached record.
 
 ## Non-goals
 
@@ -105,8 +103,7 @@ relationships, paths, changes, and source evidence remain authoritative.
 
 Context is ready for wider use when:
 
-1. boundary and symlink tests pass;
-2. concurrent cache and hook tests pass;
-3. CLI and installers pass clean-machine checks;
-4. retrieval has a reproducible baseline and measured improvement;
-5. standalone binary failure has a documented, tested fallback.
+1. the built and installed commands pass the same clean-environment smoke suite;
+2. real-repository retrieval results are reproducible and regression-gated;
+3. hard paraphrase and cross-format slices meet explicit quality budgets; and
+4. large-repository latency, memory, cache, and invalidation budgets pass.

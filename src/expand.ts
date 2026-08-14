@@ -52,6 +52,6 @@ export async function resolveExpand(root: string, handle: string): Promise<Expan
     if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
     return expandFile(p, Number(loc[2]));
   }
-  const capsule = await readJson<Capsule>(lastCapsulePath());
+  const capsule = await readJson<Capsule>(lastCapsulePath(root));
   return expandFromCapsule(capsule, handle);
 }

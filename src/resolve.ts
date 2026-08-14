@@ -1,20 +1,19 @@
+import path from "node:path";
 import type { Edge, FileFacts, Graph, Import, SymbolFact } from "./facts";
+
+export type { FileFacts } from "./facts";
 
 /** Resolve heuristic refs/edges to real symbol ids across files. Deterministic. */
 export function resolveFacts(files: FileFacts[]): Graph {
   const symbols: SymbolFact[] = [];
   const importsByFile = new Map<string, Import[]>();
   const byName = new Map<string, SymbolFact[]>(); // name -> symbols (all files)
-  const moduleToFile = new Map<string, Set<string>>(); // module spec -> files importing it
 
   for (const f of files) {
     symbols.push(...f.symbols);
     importsByFile.set(f.file, f.imports);
     for (const s of f.symbols) {
       byName.set(s.name, [...(byName.get(s.name) ?? []), s]);
-    }
-    for (const imp of f.imports) {
-      moduleToFile.set(imp.module, new Set([...(moduleToFile.get(imp.module) ?? []), f.file]));
     }
   }
 
@@ -55,8 +54,16 @@ export function resolveFacts(files: FileFacts[]): Graph {
     if (bound) {
       const targets = byName.get(e.name);
       if (targets) {
-        // prefer target in a file that imports (or is) the module
-        const cand = targets.find((t) => moduleToFile.get(bound.module)?.has(t.file) || t.file === bound.module.replace(/["']/g, "")) ?? targets[0];
+        // resolve the module spec relative to the importing file, then match
+        // candidate definition files (extension stripped); fall back to the
+        // definition file whose basename matches the module basename
+        const mod = bound.module.replace(/["']/g, "");
+        const modPath = path.posix.normalize(path.posix.join(path.posix.dirname(file), mod)).replace(/\.[^.]+$/, "");
+        const modBase = mod.split("/").pop() ?? mod;
+        const cand =
+          targets.find((t) => t.file.replace(/\.[^.]+$/, "") === modPath) ??
+          targets.find((t) => t.file.split("/").pop()?.replace(/\.[^.]+$/, "") === modBase) ??
+          targets[0];
         edges.push({ ...e, to: cand.id, conf: "resolved" });
         return;
       }

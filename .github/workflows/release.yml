@@ -67,6 +67,11 @@ jobs:
           bun build --compile --target="$TARGET" src/cli.ts --outfile "release/context/dist/context$EXTENSION"
           cp -R dist/grammars release/context/dist/grammars
           cp -R skill release/context/skill
+          # source is shipped too so the installed launcher can fall back to
+          # `bun run src/cli.ts` when the host cannot execute compiled binaries
+          cp -R src release/context/src
+          cp -R scripts release/context/scripts
+          cp package.json bun.lock release/context/
 
       - name: Create ZIP and checksum
         run: |

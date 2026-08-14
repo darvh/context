@@ -136,6 +136,7 @@ export function extractGo(root: Node, ctx: Ctx) {
           if (spec.type !== "const_spec" && spec.type !== "var_spec") continue;
           for (const id of spec.namedChildren.filter((c) => c.type === "identifier")) {
             addSym(ctx, spec, n.type === "const_declaration" ? "const" : "var", "exact", {
+              name: id.text,
               exported: /^[A-Z]/.test(id.text),
               test: fileIsTest,
             });

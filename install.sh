@@ -65,6 +65,17 @@ acquire_source() {
   source_dir="$tmp_dir/source"
 }
 
+# Self-testing launcher: try the compiled binary; if the host cannot execute it
+# (wrong arch, missing loader, killed), fall back to the Bun source entrypoint.
+# Shared template lives in scripts/mk-launcher.sh so the installer and its tests
+# use one source of truth.
+write_launcher() {
+  local root="$1"
+  local mk="${source_dir}/scripts/mk-launcher.sh"
+  if [[ ! -f "$mk" ]]; then mk="$root/scripts/mk-launcher.sh"; fi
+  bash "$mk" "$root" "$bin_dir"
+}
+
 install_from_source() {
   command -v bun >/dev/null 2>&1 || {
     echo "context: Bun is required for source installation (https://bun.sh/)" >&2
@@ -78,19 +89,7 @@ install_from_source() {
     (cd "$install_root" && bun install --frozen-lockfile)
     mkdir -p "$bin_dir"
     (cd "$install_root" && bun run build >/dev/null)
-    cat > "$bin_dir/context" <<EOF
-#!/usr/bin/env bash
-binary="$install_root/dist/context"
-if [[ -x "\$binary" ]]; then
-  "\$binary" "\$@" 2>/dev/null
-  status=\$?
-  if [[ \$status -ne 137 && \$status -ne 126 && \$status -ne 127 ]]; then
-    exit \$status
-  fi
-fi
-exec bun run "$install_root/src/cli.ts" "\$@"
-EOF
-    chmod 755 "$bin_dir/context"
+    write_launcher "$install_root"
   fi
   runtime_root="${install_root:-$source_dir}"
   if [[ "$mode" == "local" ]]; then runtime_root="$source_dir"; fi
@@ -121,11 +120,7 @@ install_from_release() {
   mkdir -p "$(dirname "$install_root")"
   mv "$tmp_dir/extract/context" "$install_root"
   mkdir -p "$bin_dir"
-  cat > "$bin_dir/context" <<EOF
-#!/usr/bin/env bash
-exec "$install_root/dist/context" "\$@"
-EOF
-  chmod 755 "$bin_dir/context"
+  write_launcher "$install_root"
   runtime_root="$install_root"
   return 0
 }

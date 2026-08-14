@@ -32,4 +32,7 @@ jobs:
         run: |
           test -x dist/context
           test -f dist/grammars/tree-sitter-go/tree-sitter-go.wasm
+          test -f dist/grammars/web-tree-sitter/tree-sitter.wasm
           ./dist/context --help >/dev/null
+          # real parse exercises grammar discovery + wasm init (--help does not)
+          cp -R spike/fixtures/multilang /tmp/ml && ./dist/context prepare "MyClass" --root /tmp/ml >/dev/null

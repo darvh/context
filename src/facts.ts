@@ -13,7 +13,8 @@ export type Kind =
   | "route"
   | "test"
   | "config"
-  | "entry";
+  | "entry"
+  | "doc";
 
 export interface Span {
   sl: number; // start line, 1-based

@@ -5,8 +5,10 @@ current working tree into a small, source-backed context capsule — no model,
 no embeddings, no repo-local state.
 
 Per `meta/cross-product/context.md` and `context-implementation-plan.md`:
-Bun/TypeScript MVP 1, Tree-sitter for Go / TypeScript / JavaScript / Python,
-plain external content-addressed cache, deterministic lexical + graph ranking.
+Bun/TypeScript MVP, Tree-sitter for Go / TypeScript / JavaScript / Python (bespoke
+walkers) plus Java / Ruby / Rust / C / C++ / C# / PHP / Bash (shared generic
+walker), plain external content-addressed cache, deterministic lexical + graph
+ranking.
 
 ## Commands
 
@@ -16,7 +18,13 @@ context expand <handle|file:line>
 context impact <symbol|--diff> [--json]
 context init [--targets all|opencode,claude-code,codex,cursor,copilot,antigravity,pi]
              [--project] [--force] [--dry-run] [--hooks]
+context config get [key]
+context config set <key> <value>     keys: semantic on|off, model <name>
 ```
+
+`--targets` rejects unknown agent names (exit 1, lists known targets).
+`context config` reads/writes `~/.config/context/config.json` (honors
+`XDG_CONFIG_HOME`); it never touches the repository.
 
 ## Install
 
@@ -71,12 +79,76 @@ bun install
 bun run context prepare "where is session persistence handled?" --root <repo>
 bun test
 bun run spike          # feasibility benchmark -> spike/results.json
+bun run eval           # retrieval eval -> Recall@5, MRR, latency vs baseline
 bun run build          # standalone binary -> ./dist/context
 ```
 
-Cache lives in `$XDG_CACHE_HOME/context` (default `~/.cache/context`), keyed
-by canonical repo path. Incremental: only changed files reparse. Working-tree
-edits (staged, unstaged, untracked) are visible on the next call.
+## Retrieval
+
+Ranking fuses graph relationships, changed-file, explicit-path, and
+entry-point signals (authoritative) with two fallback lanes:
+
+- **BM25** (`src/bm25.ts`): SQLite FTS5/BM25, porter-stemmed, one row per
+  symbol plus one row per non-code document.
+- **Docs lane** (`src/doc.ts`): non-code files (markdown/text read directly;
+  Word/Excel/PowerPoint/OpenDocument/RTF/EPUB/PDF converted by
+  `@firecrawl/anydoc` — a local Rust core, no LLM, no network) are indexed by
+  their extracted text. They never enter the symbol graph; a matching doc
+  carries a real BM25 score so a documentation query surfaces its document.
+- Each hit's `reason` lists the signals that matched.
+
+`bun run eval` runs the golden task set (`eval/tasks.json`) — baseline vs
+hybrid — and reports Recall@5, MRR, latency, index size. `bun run bench` is
+the heavy on-demand probe: a large seeded corpus of synthetic adversarial code
++ markdown with planted "needle" facts (paraphrase queries sharing zero terms
+with the fact) mixed with, via `--real`, cloned public repos and downloaded
+real multi-format documents. Reports recall/MRR grouped by seven difficulty
+classes — symbol, path, change, concept, needle, cross-format, ambiguous —
+for baseline vs hybrid (and semantic when enabled). Bench facts are honest:
+exact-symbol/path/change and ambiguous queries reach ~90-100%; concept is
+near-perfect on synthetic but hard on real repos (code legitimately beats
+docs); disjoint paraphrase needles expose the embedding model's ceiling;
+cross-format real docs are hard on large corpora.
+
+### Semantic fallback (optional, local)
+
+Opt-in with `context config set semantic on` (or `CONTEXT_SEMANTIC=1`). When a
+query leaves terms unresolved, Context embeds the query and symbol-level
+records with a local ONNX model
+(`all-MiniLM-L6-v2` q8, ~23MB, runs on a typical dev laptop; override the
+model with `context config set model <name>` or `CONTEXT_MODEL`) and appends
+matches below the graph/lexical hits. Embeddings cover name + signature + doc
++ path + a bounded body snippet (≤20 lines) — the body is where undocumented
+code keeps its semantics. Docs are embedded too (their extracted text). What's
+stored, explicitly:
+
+- **Embedded**: one vector per symbol (imports excluded) plus one per doc.
+  Never whole files.
+- **Cached**: float32 embeddings only, content-addressed by sha256 of the
+  embedded text, in `~/.cache/context/semantic/<repo>-<model>.bin` (keyed by
+  repo + `SEMANTIC_VERSION`). Edits re-embed only the changed records — line
+  shifts and untouched files are zero-cost. Raw source never leaves the repo.
+- **Not done**: no remote vector store, no hosted API, no silent network calls.
+  The only network touch is the one-time model download from Hugging Face on
+  first use. Model size, latency, and failure behavior are all visible; any
+  failure degrades to the lexical/graph result.
+
+Note: the standalone binary may not load the onnx runtime from the bundle, so
+semantic search requires the Bun source path (installer falls back to it).
+
+Cache lives in `$XDG_CACHE_HOME/context` (default `~/.cache/context`). Every
+cache/capsule/hook/semantic file is keyed by the canonical path of the
+directory actually walked — the git repo root when a hook maps the whole repo,
+otherwise the exact cwd/`--root` — so two checkouts, two sibling non-repo
+dirs, or two agent accounts never collide, and a non-repo directory never
+shares state with any other (`src/cache.ts`). Cache writes are atomic (unique
+temp files) and fail-open: an unwritable cache directory never fails a
+request. Incremental: only changed files reparse. Working-tree edits (staged,
+unstaged, untracked) are visible on the next call.
+
+The installed command self-tests the compiled binary and falls back to the Bun
+source entrypoint when the host cannot execute compiled binaries (wrong arch,
+missing loader). See `scripts/mk-launcher.sh`.
 
 ## Invariants
 
@@ -85,6 +157,17 @@ edits (staged, unstaged, untracked) are visible on the next call.
 - Every assertion points to source and labels resolution quality.
 - Deterministic output for a fixed tree + task.
 - Emits `context:telemetry <json>` on stderr; all token counts are `estimated`.
+- The symbol graph stays authoritative: exact-name / recent-change /
+  explicit-file hits pin the answer, and BM25/semantic matches append below.
+  Docs (non-code) interleave only when they cover more query terms than the
+  best code match, scored by their real BM25 (idf + length normalized) and
+  floored by that coverage so a documentation query surfaces its document.
+- Hub bonuses and 2-hop relation propagation are bounded (degree-capped), so
+  a helper called by hundreds of tests can't drown a direct match.
+- Imports are evidence edges, never ranking targets; tokenization
+  (camelCase/snake_case) is computed once per graph, memoized across queries.
+- Doc conversion (anydoc) and semantic inference are local and opt-in; no
+  silent network calls during discovery.
 
 ## Hooks (host adapters, both fail open)
 
@@ -97,7 +180,8 @@ edits (staged, unstaged, untracked) are visible on the next call.
 
 Savings projection (`src/savings.ts`) estimates the input tokens the capsule
 replaces (its pointed-at source spans) minus capsule tokens; `estimated`, per
-the plan's token accounting. Benchmark-only proof lives in `benchmark/`.
+the plan's token accounting. Feasibility proof lives in `spike/` and the
+retrieval baseline in `eval/`.
 
 Current benchmark results are sample-fixture only (spike fixtures), not a
 product claim; the real fixture (SWE-bench / Terminal-Bench 2.1 via harbor) is

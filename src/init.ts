@@ -17,6 +17,8 @@ const TARGETS = [
 
 type Status = "installed" | "up-to-date" | "updated" | "conflict" | "agent-miss" | "unselected" | "error";
 
+export const AGENT_NAMES = TARGETS.map((t) => t.name);
+
 export interface InitResult {
   agent: string;
   what: string; // skill | hook-user | hook-agent | hooks-config
@@ -55,10 +57,19 @@ async function fileEq(a: string, b: string): Promise<boolean> {
   }
 }
 
+/** Fail on unknown agent names so `--targets typo` never silently installs nothing. */
+function validateOnly(only: string[]): void {
+  const unknown = only.filter((n) => !AGENT_NAMES.includes(n));
+  if (unknown.length) {
+    throw new Error(`unknown agent target${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")} (known: ${AGENT_NAMES.join(", ")})`);
+  }
+}
+
 /** Install the host-neutral context skill into each selected agent dir. */
 export async function init(opts: InitOptions): Promise<InitResult[]> {
   const out: InitResult[] = [];
   const src = path.join(SKILL_DIR, "SKILL.md");
+  validateOnly(opts.only);
   const agents = opts.only.length ? TARGETS.filter((t) => opts.only.includes(t.name)) : TARGETS;
 
   for (const t of agents) {

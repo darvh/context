@@ -102,8 +102,13 @@ export function extractTsJs(root: Node, ctx: Ctx) {
         }
         const imp = addSym(ctx, n, "import", "exact", { sig: `import ${module || n.text.slice(0, 60)}` });
         imp.name = module.split("/").pop() || module || "import";
-        ctx.imports.push({ file: ctx.file, module, local: module.split("/").pop() || "", at: `${ctx.file}:${n.startPosition.row + 1}` });
-        for (const l of locals) ctx.edges.push({ from: imp.id, to: "", name: l, kind: "import", conf: "exact", at: `${ctx.file}:${n.startPosition.row + 1}` });
+        for (const l of locals) {
+          ctx.imports.push({ file: ctx.file, module, local: l, at: `${ctx.file}:${n.startPosition.row + 1}` });
+          ctx.edges.push({ from: imp.id, to: "", name: l, kind: "import", conf: "exact", at: `${ctx.file}:${n.startPosition.row + 1}` });
+        }
+        if (!locals.length) {
+          ctx.imports.push({ file: ctx.file, module, local: imp.name, at: `${ctx.file}:${n.startPosition.row + 1}` });
+        }
         break;
       }
       case "function_declaration":

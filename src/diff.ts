@@ -12,8 +12,13 @@ export async function changedFiles(root: string): Promise<Set<string>> {
     await p.exited;
     for (const line of text.split("\n")) {
       if (!line || line.length < 4) continue;
-      const f = line.slice(3).trim();
-      if (f) out.add(f.replace(/^"?/, "").replace(/"?$/, ""));
+      const raw = line.slice(3).trim();
+      // porcelain renames: `R  old -> new` — both sides are working-tree state
+      const parts = line.startsWith("R") ? raw.split(" -> ") : [raw];
+      for (let f of parts) {
+        f = f.replace(/^"?/, "").replace(/"?$/, "");
+        if (f) out.add(f);
+      }
     }
   } catch {}
   return out;

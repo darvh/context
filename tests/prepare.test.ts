@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { build } from "../src/build";
 import { rankSymbols, explicitFilesFromTask } from "../src/query";
+import { buildBm25Index } from "../src/bm25";
 import { assemble } from "../src/assemble";
 import { renderCapsule } from "../src/render";
 
@@ -10,7 +11,8 @@ const TS = new URL("./fixtures/typescript", import.meta.url).pathname;
 async function prepare(root: string, task: string, budget = 1200) {
   const b = await build(root);
   const explicitFiles = explicitFilesFromTask(task, b.files);
-  const hits = rankSymbols({ task, graph: b.graph, changed: new Set(), explicitFiles });
+  const bm25 = b.graph.symbols.length ? buildBm25Index(b.graph) : undefined;
+  const hits = rankSymbols({ task, graph: b.graph, changed: new Set(), explicitFiles, bm25 });
   return { b, capsule: assemble({ task, build: b, hits, budgetTokens: budget }) };
 }
 

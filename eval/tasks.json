@@ -1,0 +1,154 @@
+{
+  "tasks": [
+    {
+      "id": "g1",
+      "repo": "go",
+      "query": "where is session persistence handled?",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["internal/session/store.go"],
+      "expectedSymbols": ["OpenStore"],
+      "changed": []
+    },
+    {
+      "id": "g2",
+      "repo": "go",
+      "query": "how does the server start and wire the session store?",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["cmd/server/main.go"],
+      "expectedSymbols": ["main"],
+      "changed": []
+    },
+    {
+      "id": "g3",
+      "repo": "go",
+      "query": "OpenStore",
+      "type": "symbol",
+      "topK": 3,
+      "expectedFiles": ["internal/session/store.go"],
+      "expectedSymbols": ["OpenStore"],
+      "changed": []
+    },
+    {
+      "id": "g4",
+      "repo": "go",
+      "query": "fix the bug in internal/session/store.go",
+      "type": "path",
+      "topK": 3,
+      "expectedFiles": ["internal/session/store.go"],
+      "expectedSymbols": [],
+      "changed": []
+    },
+    {
+      "id": "g5",
+      "repo": "go",
+      "query": "session persistence",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["internal/session/store.go"],
+      "expectedSymbols": ["OpenStore", "Store", "Get"],
+      "changed": []
+    },
+    {
+      "id": "g6",
+      "repo": "go",
+      "query": "where does the app remember values after restart?",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["internal/session/store.go"],
+      "expectedSymbols": ["OpenStore"],
+      "changed": []
+    },
+    {
+      "id": "g7",
+      "repo": "go",
+      "query": "http routes for session endpoints",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["internal/http/routes.go"],
+      "expectedSymbols": ["NewHandler"],
+      "changed": []
+    },
+    {
+      "id": "g8",
+      "repo": "go",
+      "query": "session store was recently changed, where do we touch it",
+      "type": "change",
+      "topK": 5,
+      "expectedFiles": ["internal/session/store.go"],
+      "expectedSymbols": ["Store"],
+      "changed": ["internal/session/store.go"]
+    },
+    {
+      "id": "t1",
+      "repo": "typescript",
+      "query": "session persistence",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["src/session/store.ts"],
+      "expectedSymbols": ["openStore", "Store"],
+      "changed": []
+    },
+    {
+      "id": "t2",
+      "repo": "typescript",
+      "query": "which file wires express and the session store",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["src/index.ts"],
+      "expectedSymbols": ["main"],
+      "changed": []
+    },
+    {
+      "id": "t3",
+      "repo": "typescript",
+      "query": "router exposes the session endpoints",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["src/http/router.ts"],
+      "expectedSymbols": ["router"],
+      "changed": []
+    },
+    {
+      "id": "p1",
+      "repo": "python",
+      "query": "session persistence",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["app/session/store.py"],
+      "expectedSymbols": ["open_store", "Store"],
+      "changed": []
+    },
+    {
+      "id": "p2",
+      "repo": "python",
+      "query": "flask routes for session endpoints",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["app/api.py"],
+      "expectedSymbols": ["create_app"],
+      "changed": []
+    },
+    {
+      "id": "m1",
+      "repo": "multilang",
+      "query": "MyClass",
+      "type": "symbol",
+      "topK": 5,
+      "expectedFiles": ["app.rb", "main.cpp", "main.dart"],
+      "expectedSymbols": ["MyClass"],
+      "changed": []
+    },
+    {
+      "id": "e1",
+      "repo": "go",
+      "query": "values are being lost when the process exits, find the store",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["internal/session/store.go"],
+      "expectedSymbols": ["Store", "OpenStore"],
+      "changed": []
+    }
+  ]
+}

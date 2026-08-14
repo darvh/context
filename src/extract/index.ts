@@ -4,6 +4,7 @@ import { newCtx } from "./core";
 import { extractGo } from "./go";
 import { extractTsJs } from "./ts";
 import { extractPy } from "./py";
+import { extractGeneric } from "./generic";
 import { extractRg } from "./rg";
 import type { FileFacts } from "../facts";
 import { parse } from "../parse";
@@ -14,6 +15,15 @@ const EXTRACTOR_MAP: Record<string, Extractor> = {
   ts: extractTsJs,
   js: extractTsJs,
   py: extractPy,
+  // AST-backed via the shared generic walker
+  java: extractGeneric,
+  rb: extractGeneric,
+  rs: extractGeneric,
+  c: extractGeneric,
+  cpp: extractGeneric,
+  cs: extractGeneric,
+  php: extractGeneric,
+  sh: extractGeneric,
 };
 
 export function extractorFor(lang: string): Extractor | null {
@@ -25,14 +35,21 @@ export async function extractFile(file: string, lang: string, source: string, ha
   const ext = extractorFor(lang);
   if (ext) {
     const parsed = await parse(lang, source);
-    if (!parsed) return { file, lang, hash, symbols: [], edges: [], imports: [] };
-    try {
-      const root: Node = parsed.tree.rootNode;
-      if (!root.hasError) ext(root, ctx);
-    } finally {
-      parsed.dispose();
+    if (parsed) {
+      try {
+        const root: Node = parsed.tree.rootNode;
+        if (!root.hasError) ext(root, ctx);
+      } finally {
+        parsed.dispose();
+      }
+      return { file, lang, hash, symbols: ctx.symbols, edges: ctx.edges, imports: ctx.imports };
     }
-    return { file, lang, hash, symbols: ctx.symbols, edges: ctx.edges, imports: ctx.imports };
+    // grammar unavailable at runtime (missing wasm): fall back to rg heuristics
+    if (rgLangFor(file) || lang !== "rg") {
+      extractRg(ctx);
+      return { file, lang: rgLangFor(file) ?? lang, hash, symbols: ctx.symbols, edges: ctx.edges, imports: ctx.imports };
+    }
+    return { file, lang, hash, symbols: [], edges: [], imports: [] };
   }
   // rg fallback: line-based heuristics, no WASM needed — supports 20+ langs via rules.ts
   const rgLang = rgLangFor(file) ?? lang;

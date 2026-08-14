@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { build } from "../src/build";
 import { rankSymbols } from "../src/query";
+import { buildBm25Index } from "../src/bm25";
 import { assemble } from "../src/assemble";
 import { expandFromCapsule, renderExpanded, resolveExpand } from "../src/expand";
 import { impact, renderImpact } from "../src/impact";
@@ -12,7 +13,8 @@ const GO = new URL("./fixtures/go", import.meta.url).pathname;
 
 async function prepareCapsule(root: string, task: string) {
   const b = await build(root);
-  const hits = rankSymbols({ task, graph: b.graph, changed: new Set(), explicitFiles: [] });
+  const bm25 = b.graph.symbols.length ? buildBm25Index(b.graph) : undefined;
+  const hits = rankSymbols({ task, graph: b.graph, changed: new Set(), explicitFiles: [], bm25 });
   return assemble({ task, build: b, hits, budgetTokens: 1200 });
 }
 
@@ -93,6 +95,6 @@ describe("cache", () => {
   test("cache is external to the repo", async () => {
     const rec = await loadCache(GO);
     expect(rec).not.toBeNull();
-    expect(rec!.version).toBe("context-cache-v2");
+    expect(rec!.version).toBe("context-cache-v4");
   });
 });

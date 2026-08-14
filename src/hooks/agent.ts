@@ -1,4 +1,5 @@
 import { hookStatePath, readJson } from "../cache";
+import { findRoot } from "../scan";
 import { formatSavings, type Savings } from "../savings";
 import { estTokens } from "../tokens";
 
@@ -26,7 +27,9 @@ export async function runAgentHook(input: AgentResponseInput, opts: { exit?: boo
   const exit = opts.exit ?? true;
   const out: AgentResponseOut = { outputTokens: estTokens(input.text), savings: null };
   try {
-    const state = await readJson<{ key: string; savings?: Savings }>(hookStatePath());
+    // resolve repo like the user hook does, so per-repo state is scoped correctly
+    const root = (await findRoot(process.cwd())) ?? process.cwd();
+    const state = await readJson<{ key: string; savings?: Savings }>(hookStatePath(root));
     const s = state?.savings;
     if (s && s.coldTokens > 0) {
       out.savings = s;

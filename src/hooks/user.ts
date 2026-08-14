@@ -1,6 +1,7 @@
 import { build } from "../build";
 import { findRoot } from "../scan";
 import { rankSymbols } from "../query";
+import { buildBm25Index } from "../bm25";
 import { assemble } from "../assemble";
 import { estTokens } from "../tokens";
 import { projectSavings, type Savings } from "../savings";
@@ -29,16 +30,19 @@ export async function runHook(task: string, cwd: string, opts: HookOpts = {}): P
   const t0 = performance.now();
   const exit = opts.exit ?? true;
   const out: HookOut = {};
+  let finished = false;
   const done = (): HookOut => {
+    if (finished) return out; // timer already fired: never double-emit
+    finished = true;
+    clearTimeout(timer);
     if (exit) {
       process.stdout.write(JSON.stringify(out));
       process.exit(0);
     }
     return out;
   };
-  const timer = setTimeout(() => {
-    if (exit) done();
-  }, HOOK_TIMEOUT_MS);
+  const timer = setTimeout(() => done(), HOOK_TIMEOUT_MS);
+  timer.unref?.();
 
   try {
     if (!task || task.trim().length < 40) return done(); // trivial/short prompts skip
@@ -49,13 +53,15 @@ export async function runHook(task: string, cwd: string, opts: HookOpts = {}): P
       .update(task + "\0" + b.treeHash + "\0" + [...changed].sort().join("\0"))
       .digest("hex")
       .slice(0, 16);
-    const state = await readJson<{ key: string }>(hookStatePath());
+    const statePath = hookStatePath(repoRoot);
+    const state = await readJson<{ key: string }>(statePath);
     if (state && state.key === key) return done(); // already injected for this state
 
-    const hits = rankSymbols({ task, graph: b.graph, changed, explicitFiles: [] });
+    const bm25 = b.graph.symbols.length ? buildBm25Index(b.graph) : undefined;
+    const hits = rankSymbols({ task, graph: b.graph, changed, explicitFiles: [], bm25 });
     const capsule = assemble({ task, build: b, hits, budgetTokens: HOOK_BUDGET });
     if (!capsule.hits.length) {
-      await writeJson(hookStatePath(), { key });
+      await writeJson(statePath, { key }).catch(() => {});
       return done(); // low confidence: preserve normal tool fallback
     }
 
@@ -73,12 +79,10 @@ export async function runHook(task: string, cwd: string, opts: HookOpts = {}): P
 
     // project Graft-style savings from the spans the capsule replaces
     const savings = await projectSavings(b, capsule);
-    await writeJson(hookStatePath(), { key, savings });
+    await writeJson(statePath, { key, savings }).catch(() => {});
     console.error("context:telemetry " + JSON.stringify({ cmd: "hook", capsuleTokens: capsule.tokensUsed, savedTokens: savings.savedTokens, savedPct: Math.round(savings.savedPct), outputTokens: estTokens(JSON.stringify(out)), totalMs: Math.round(performance.now() - t0) }));
-    clearTimeout(timer);
     return done();
   } catch {
-    clearTimeout(timer);
     return done(); // fail open
   }
 }

@@ -17,11 +17,21 @@ async function setup() {
 }
 
 describe("scan ignore override", () => {
-  test("does not include symbolic links", async () => {
+  test("follows symbolic links to files and dirs, cycles terminate", async () => {
     const root = await setup();
     try {
       await fs.symlink("/etc/hosts", path.join(root, "lib", "external.ts"));
-      expect((await scan(root)).files).not.toContain("lib/external.ts");
+      await fs.mkdir(path.join(root, "links"), { recursive: true });
+      await fs.symlink(path.join(root, "lib"), path.join(root, "links", "to-lib"));
+      await fs.symlink(path.join(root, "links"), path.join(root, "links", "loop"));
+      const f = (await scan(root)).files;
+      expect(f).toContain("lib/external.ts");
+      expect(f).toContain("lib/a.ts");
+      // a dir reachable via both the real path and a symlink is walked once —
+      // the symlinked path is skipped so no file appears twice
+      expect(f).not.toContain("links/to-lib/a.ts");
+      expect(f.filter((x) => x === "lib/a.ts")).toHaveLength(1);
+      expect(f.filter((x) => x === ".gitignore")).toHaveLength(1);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

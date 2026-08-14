@@ -103,9 +103,9 @@ export function addSym(
   n: Node,
   kind: Kind,
   conf: Confidence,
-  opts: { exported?: boolean; test?: boolean; sig?: string } = {},
+  opts: { exported?: boolean; test?: boolean; sig?: string; name?: string } = {},
 ): SymbolFact {
-  const name = declName(n);
+  const name = opts.name ?? declName(n);
   const s: SymbolFact = {
     id: makeId(ctx.file, name, n.startPosition.row + 1),
     file: ctx.file,

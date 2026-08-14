@@ -11,16 +11,16 @@
     "start": "bun run src/cli.ts",
     "install:local": "bash install.sh --local",
     "spike": "bun run spike/bench.ts",
-    "bench": "bun run benchmark/run.ts",
-    "bench:replay": "bun run benchmark/run.ts --replay",
-    "monitor": "bun run benchmark/monitor.ts",
-    "monitor:agent": "bun run benchmark/monitor-agent.ts",
-    "tb": "bun run benchmark/harbor.ts",
+    "eval": "bun run scripts/eval.ts",
+    "bench": "bun run scripts/bench.ts",
     "grammars": "bun run scripts/embed-grammars.ts",
-    "build": "bun run scripts/embed-grammars.ts && mkdir -p dist && bun run scripts/package.ts && bun build --compile src/cli.ts --outfile dist/context",
+    "build": "bun run scripts/embed-grammars.ts && mkdir -p dist && bun run scripts/package.ts && bun build --compile src/cli.ts --outfile dist/context && bash scripts/sign.sh dist/context",
+    "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
+    "@firecrawl/anydoc": "^0.1.9",
+    "@huggingface/transformers": "^4.2.0",
     "ignore": "^7.0.0",
     "tree-sitter-bash": "^0.25.0",
     "tree-sitter-c": "^0.24.1",
@@ -33,9 +33,8 @@
     "tree-sitter-python": "^0.23.6",
     "tree-sitter-ruby": "^0.23.1",
     "tree-sitter-rust": "^0.24.0",
-    "tree-sitter-swift": "^0.7.0",
     "tree-sitter-typescript": "^0.23.2",
-    "web-tree-sitter": "^0.24.7"
+    "web-tree-sitter": "0.25.10"
   },
   "devDependencies": {
     "@types/bun": "latest",

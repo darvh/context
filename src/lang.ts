@@ -8,7 +8,7 @@ export interface LangConf {
   wasm: string; // resolved absolute path to grammar wasm
 }
 
-function grammarDir(): string {
+export function grammarDir(): string {
   const env = process.env.CONTEXT_GRAMMAR_DIR;
   if (env && env.trim()) return env.endsWith('/') ? env : env + '/';
   try {
@@ -35,7 +35,8 @@ export const LANGS: LangConf[] = [
     wasm: DIR + 'tree-sitter-javascript/tree-sitter-javascript.wasm'
   },
   { name: 'py', exts: ['.py'], wasm: DIR + 'tree-sitter-python/tree-sitter-python.wasm' },
-  // new langs: rg fallback today, AST tomorrow — just add entry to maps in rules.ts, no code change
+  // new langs: AST-backed via the shared generic extractor (extract/generic.ts);
+  // rg remains the fallback when a grammar has no usable wasm
   { name: 'java', exts: ['.java'], wasm: DIR + 'tree-sitter-java/tree-sitter-java.wasm' },
   { name: 'rb', exts: ['.rb'], wasm: DIR + 'tree-sitter-ruby/tree-sitter-ruby.wasm' },
   { name: 'rs', exts: ['.rs'], wasm: DIR + 'tree-sitter-rust/tree-sitter-rust.wasm' },

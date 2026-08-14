@@ -42,6 +42,32 @@ function Acquire-Source {
   $script:source = $clone
 }
 
+function Write-Launcher {
+  param([string]$Root)
+  $binary = Join-Path $Root "dist\context.exe"
+  $launcher = @"
+`$ErrorActionPreference = "Continue"
+`$binary = "$binary"
+if (Test-Path `$binary) {
+  try {
+    & `$binary `$args
+    exit `$LASTEXITCODE
+  } catch {
+    Write-Warning "context: compiled binary could not run; falling back to source"
+  }
+}
+if (Test-Path "$Root\src\cli.ts") {
+  & bun run "$Root\src\cli.ts" `$args
+  exit `$LASTEXITCODE
+}
+Write-Error "context: cannot execute compiled binary and Bun source fallback is unavailable"
+exit 1
+"@
+  Set-Content (Join-Path $binDir "context.ps1") $launcher
+  $cmd = "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$binDir\context.ps1`" %*"
+  Set-Content (Join-Path $binDir "context.cmd") $cmd
+}
+
 function Install-Source {
   if (-not (Get-Command bun -ErrorAction SilentlyContinue)) { throw "context: Bun is required for source installation (https://bun.sh/)" }
   Acquire-Source
@@ -54,8 +80,7 @@ function Install-Source {
     bun run build | Out-Null
     Pop-Location
     New-Item -ItemType Directory -Force -Path $binDir | Out-Null
-    $wrapper = Join-Path $binDir "context.ps1"
-    Set-Content $wrapper "bun run `"$installRoot\src\cli.ts`" `$args"
+    Write-Launcher $installRoot
   }
   $runtime = if ($mode -eq "local") { $source } else { $installRoot }
   $init = @("run", (Join-Path $runtime "src\cli.ts"), "init", "--targets", $targets)
@@ -88,8 +113,7 @@ function Install-Release {
     New-Item -ItemType Directory -Force -Path (Split-Path $installRoot) | Out-Null
     Move-Item $runtime $installRoot
     New-Item -ItemType Directory -Force -Path $binDir | Out-Null
-    Set-Content (Join-Path $binDir "context.ps1") "& `"$installRoot\dist\context.exe`" `$args"
-    Set-Content (Join-Path $binDir "context.cmd") "@echo off`r`n`"$installRoot\dist\context.exe`" %*"
+    Write-Launcher $installRoot
     $init = @("init", "--targets", $targets)
     if ($force) { $init += "--force" }
     & (Join-Path $installRoot "dist\context.exe") $init

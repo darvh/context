@@ -65,24 +65,32 @@ export function extractPy(root: Node, ctx: Ctx) {
       for (const b of sup) {
         ctx.edges.push({ from: s.id, to: "", name: b.text.split(".").pop()!, kind: "inherit", conf: "resolved", at: `${ctx.file}:${b.startPosition.row + 1}` });
       }
-      for (const c of walk(n)) {
-        if (c.type === "function_definition" && c.parent !== n) {
-          const mnm = nameField(c);
-          const mname = mnm ? mnm.text : "m";
-          const m = addSym(ctx, c, "method", "exact", { test: mname.startsWith(TEST_IDENTS.py.funcPrefix) });
-          collectCalls(ctx, c, m.id);
-          ctx.edges.push({ from: s.id, to: m.id, name: mname, kind: "contain", conf: "exact", at: `${ctx.file}:${c.startPosition.row + 1}` });
-        }
+      // methods are DIRECT children of the class body — nested functions of
+      // methods belong to the method, not the class (and must not be added
+      // twice: once here, once by the main loop)
+      const body = n.namedChildren.find((c) => c.type === "block");
+      for (const c of body?.namedChildren ?? []) {
+        if (c.type !== "function_definition") continue;
+        const mnm = nameField(c);
+        const mname = mnm ? mnm.text : "m";
+        const m = addSym(ctx, c, "method", "exact", { test: mname.startsWith(TEST_IDENTS.py.funcPrefix) });
+        collectCalls(ctx, c, m.id);
+        ctx.edges.push({ from: s.id, to: m.id, name: mname, kind: "contain", conf: "exact", at: `${ctx.file}:${c.startPosition.row + 1}` });
       }
     }
     handleDecorators(n, s.id);
     if (isTest) collectTestUses(ctx, n, s.id);
   };
 
+  const inClass = (n: Node): boolean => {
+    for (let p = n.parent; p; p = p.parent) if (p.type === "class_definition") return true;
+    return false;
+  };
+
   for (const n of walk(root)) {
     switch (n.type) {
       case "function_definition":
-        if (n.parent && n.parent.type === "class_definition") break;
+        if (inClass(n)) break;
         handleDef(n, "function");
         break;
       case "class_definition":
@@ -93,11 +101,21 @@ export function extractPy(root: Node, ctx: Ctx) {
         const module = n.type === "import_from_statement"
           ? (n.namedChild(0)?.text ?? "")
           : (n.namedChildren.find((c) => c.type === "dotted_name")?.text ?? "");
-        const aliases = n.namedChildren.filter((c) => c.type === "aliased_import").map((c) => c.namedChild(0)?.text ?? "");
         const imp = addSym(ctx, n, "import", "exact", { sig: `import ${module || n.text.slice(0, 50)}` });
         imp.name = module.split(".").pop() || module;
-        ctx.imports.push({ file: ctx.file, module, local: module.split(".").pop() || "", at: `${ctx.file}:${n.startPosition.row + 1}` });
-        for (const a of aliases) ctx.edges.push({ from: imp.id, to: "", name: a, kind: "import", conf: "exact", at: `${ctx.file}:${n.startPosition.row + 1}` });
+        const bindings: string[] = [];
+        for (const c of n.namedChildren) {
+          if (!c) continue;
+          if (n.type === "import_from_statement" && c === n.namedChild(0)) continue;
+          if (c.type === "aliased_import") bindings.push(c.namedChild(0)?.text ?? "");
+          else if (c.type === "identifier") bindings.push(c.text);
+          else if (c.type === "dotted_name") bindings.push(c.text.split(".").pop() ?? "");
+        }
+        if (!bindings.length) bindings.push(imp.name);
+        for (const b of bindings) {
+          ctx.imports.push({ file: ctx.file, module, local: b, at: `${ctx.file}:${n.startPosition.row + 1}` });
+          ctx.edges.push({ from: imp.id, to: "", name: b, kind: "import", conf: "exact", at: `${ctx.file}:${n.startPosition.row + 1}` });
+        }
         break;
       }
       case "assignment": {

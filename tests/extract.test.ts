@@ -67,20 +67,26 @@ describe("structural extraction", () => {
     expect(store.sig).toContain("def open_store");
   });
 
-  test("rg fallback: multilang symbol extraction", async () => {
+  test("AST generic extractor: java/rb/rs/c/cpp/cs/php/sh", async () => {
     const b = await buildFresh(ML);
     const kinds = (file: string) =>
       b.graph.symbols.filter((s) => s.file === file).map((s) => `${s.kind}:${s.name}`);
-    expect(kinds("Main.java")).toEqual(expect.arrayContaining(["entry:Main", "import:List"]));
-    expect(kinds("app.rb")).toEqual(expect.arrayContaining(["class:MyClass"]));
+    expect(kinds("Main.java")).toEqual(expect.arrayContaining(["entry:Main", "import:List", "method:main"]));
+    expect(kinds("app.rb")).toEqual(expect.arrayContaining(["class:MyClass", "method:my_method"]));
     expect(kinds("main.rs")).toEqual(expect.arrayContaining(["entry:main", "struct:Foo"]));
-    expect(kinds("index.php")).toEqual(expect.arrayContaining(["class:App"]));
-    expect(kinds("main.c")).toEqual(expect.arrayContaining(["entry:main"]));
+    expect(kinds("index.php")).toEqual(expect.arrayContaining(["class:App", "entry:main"]));
+    expect(kinds("main.c")).toEqual(expect.arrayContaining(["entry:main", "function:helper"]));
     expect(kinds("main.cpp")).toEqual(expect.arrayContaining(["entry:main", "class:MyClass"]));
-    expect(kinds("Program.cs")).toEqual(expect.arrayContaining(["entry:Program"]));
+    expect(kinds("Program.cs")).toEqual(expect.arrayContaining(["entry:Program", "method:Main"]));
+    expect(kinds("main.sh")).toEqual(expect.arrayContaining(["entry:main"]));
+  });
+
+  test("rg fallback: kt/scala/lua/dart/swift symbol extraction", async () => {
+    const b = await buildFresh(ML);
+    const kinds = (file: string) =>
+      b.graph.symbols.filter((s) => s.file === file).map((s) => `${s.kind}:${s.name}`);
     expect(kinds("Main.kt")).toEqual(expect.arrayContaining(["entry:main", "entry:App"]));
     expect(kinds("main.swift")).toEqual(expect.arrayContaining(["entry:main"]));
-    expect(kinds("main.sh")).toEqual(expect.arrayContaining(["entry:main"]));
     expect(kinds("init.lua")).toEqual(expect.arrayContaining(["function:myfunc"]));
     expect(kinds("Main.scala")).toEqual(expect.arrayContaining(["entry:Main"]));
     expect(kinds("main.dart")).toEqual(expect.arrayContaining(["class:MyClass"]));

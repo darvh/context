@@ -1,4 +1,5 @@
 import type { RankedHit } from "./query";
+import { meaningfulTerms } from "./query";
 import type { BuildResult } from "./build";
 import { estTokens } from "./tokens";
 
@@ -38,8 +39,12 @@ export interface AssembleOpts {
 }
 
 export function assemble({ task, build, hits, budgetTokens }: AssembleOpts): Capsule {
-  const t = terms2(task);
-  const unresolvedTerms = t.filter((term) => !hits.some((h) => terms2(h.symbol.name + " " + h.symbol.sig).includes(term)));
+  const t = meaningfulTerms(task);
+  const hitTerms = hits.map((h) => new Set(meaningfulTerms(h.symbol.name + " " + h.symbol.sig)));
+  const unresolvedTerms = t.filter((term) => {
+    for (const ht of hitTerms) if (ht.has(term)) return false;
+    return true;
+  });
 
   const fileScore = new Map<string, number>();
   for (const h of hits) fileScore.set(h.symbol.file, (fileScore.get(h.symbol.file) ?? 0) + h.score);
@@ -107,10 +112,4 @@ export function assemble({ task, build, hits, budgetTokens }: AssembleOpts): Cap
 
 export function mkHandle(i: number): string {
   return `src-${String(i + 1).padStart(2, "0")}`;
-}
-
-function terms2(s: string): string[] {
-  const out = new Set<string>();
-  for (const m of s.toLowerCase().matchAll(/[a-z0-9]+/g)) out.add(m[0]);
-  return [...out];
 }
