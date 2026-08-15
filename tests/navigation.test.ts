@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { build } from "../src/build";
 import { impact, renderImpact } from "../src/impact";
 import { follow } from "../src/follow";
-import { mapDir, mapSymbol } from "../src/repo-map";
+import { mapDir } from "../src/repo-map";
 import { buildDirCards, rankDirCards } from "../src/dirmap";
 import { rankSymbols } from "../src/query";
 
@@ -104,12 +104,5 @@ describe("map", () => {
     expect(store.syms.map((s) => s.name)).toContain("OpenStore");
     const testBlock = blocks.find((bl) => bl.file === "internal/session/store_test.go")!;
     expect(testBlock.calls.length).toBeGreaterThan(0); // test calls OpenStore/Get/Set
-  });
-
-  test("symbol map separates callers from callees", async () => {
-    const b = await buildGo();
-    const { out } = mapSymbol(b, "OpenStore");
-    expect(out).toContain("callers:");
-    expect(out).toContain("main");
   });
 });

@@ -18,8 +18,7 @@ const HELP = `context — deterministic discovery compiler
 usage:
   context observe "<task>" [--budget N] [--json] [--root DIR]
                 [--ignore pat[,pat]] [--no-gitignore]
-  context find "<query>" [--budget N] [--json] [--root DIR]
-  context map <directory|symbol> [--root DIR]
+  context map <directory> [--root DIR]
   context follow <symbol|qualified-id> [<edge>] [--root DIR]
   context expand <handle|file:line> [--root DIR]
   context impact <symbol|qualified-id|--diff> [--json] [--root DIR]
@@ -31,10 +30,11 @@ usage:
   context --help
   context --version
 
-observe/find are aliases of prepare: repository and directory orientation
-first, exact evidence via expand/find. map compiles a local RepoMap over one
-directory or symbol. follow walks one edge kind from a symbol (callers,
-callees, tests, inherit, implement, contain, ref, import, all).
+observe (alias: prepare) is orientation: DirMap + neighborhoods + spans.
+map compiles a bounded local RepoMap over one directory. follow walks one edge
+kind from a symbol (callers, callees, tests, inherit, implement, contain, ref,
+import, all) with short trails. impact is the symbol map + diff. expand is
+exact span evidence.
 
 ignore override:
   --ignore "a,b"   add extra ignore globs (on top of .gitignore + defaults)
@@ -160,34 +160,26 @@ async function cmdImpact(args: Args) {
 async function cmdMap(args: Args) {
   const arg = args.rest[0];
   if (!arg) {
-    console.error("usage: context map <directory|symbol>");
+    console.error("usage: context map <directory>");
     process.exit(1);
   }
   const b = await build(args.root, args.scan);
-  // directory handle when it names an existing directory (with or without /)
   const dirArg = arg.endsWith("/") ? arg.slice(0, -1) : arg;
-  const { mapDir, mapSymbol } = await import("./repo-map");
-  const isDir = b.files.some((f) => f === dirArg || f.startsWith(dirArg + "/"));
-  if (isDir) {
-    const { blocks, truncated } = mapDir(b, dirArg);
-    const out: string[] = [];
-    if (!blocks.length) {
-      out.push(`no code symbols under ${arg}`);
-    }
-    for (const blk of blocks) {
-      out.push(`\n${blk.file}`);
-      for (const s of blk.syms) out.push(`  ${s.kind} ${s.name}  ${s.sig}  ${s.nameLine}-${s.span.el}`);
-      for (const c of blk.calls) out.push(`    calls → ${c}`);
-      for (const t of blk.testedBy) out.push(`    tested_by → ${t}`);
-    }
-    if (truncated) out.push(`\n(truncated at ${12} files — map a subdirectory for more)`);
-    console.error("context:telemetry " + JSON.stringify({ cmd: "map", dir: dirArg, files: blocks.length, outputTokens: estTokens(out.join("\n")) }));
-    process.stdout.write(out.join("\n") + "\n");
-    return;
+  const { mapDir } = await import("./repo-map");
+  const { blocks, truncated } = mapDir(b, dirArg);
+  const out: string[] = [];
+  if (!blocks.length) {
+    out.push(`no code symbols under ${arg}`);
   }
-  const { out, truncated } = mapSymbol(b, arg);
-  console.error("context:telemetry " + JSON.stringify({ cmd: "map", symbol: arg, outputTokens: estTokens(out) }));
-  process.stdout.write(out + (truncated ? "\n(truncated — follow deeper with a qualified id)" : "") + "\n");
+  for (const blk of blocks) {
+    out.push(`\n${blk.file}`);
+    for (const s of blk.syms) out.push(`  ${s.kind} ${s.name}  ${s.sig}  ${s.nameLine}-${s.span.el}`);
+    for (const c of blk.calls) out.push(`    calls → ${c}`);
+    for (const t of blk.testedBy) out.push(`    tested_by → ${t}`);
+  }
+  if (truncated) out.push(`\n(truncated at ${12} files — map a subdirectory for more)`);
+  console.error("context:telemetry " + JSON.stringify({ cmd: "map", dir: dirArg, files: blocks.length, outputTokens: estTokens(out.join("\n")) }));
+  process.stdout.write(out.join("\n") + "\n");
 }
 
 async function cmdFollow(args: Args) {
@@ -296,7 +288,7 @@ export async function main(argv: string[]) {
     console.log(HELP);
     return;
   }
-  if (cmd === "prepare" || cmd === "observe" || cmd === "find") {
+  if (cmd === "prepare" || cmd === "observe") {
     args.rest.shift();
     await cmdPrepare(args);
   } else if (cmd === "map") {

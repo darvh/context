@@ -7,7 +7,7 @@ import type { Edge, SymbolFact } from "./facts";
 
 export const EDGE_KINDS = ["call", "import", "inherit", "implement", "ref", "contain", "test"] as const;
 
-export interface TrailStep {
+interface TrailStep {
   id: string;
   name: string;
   file: string;
@@ -17,7 +17,7 @@ export interface TrailStep {
   dir: "out" | "in"; // walk direction: out = target, in = source of the edge
 }
 
-export interface Trail {
+interface Trail {
   steps: TrailStep[]; // first step is the query symbol
 }
 
@@ -30,15 +30,15 @@ export interface FollowResult {
   truncated: boolean;
 }
 
-export const MAX_DEPTH = 3;
-export const MAX_TRAILS = 8;
+const MAX_DEPTH = 3;
+const MAX_TRAILS = 8;
 
 function symbolAt(id: string, byId: Map<string, SymbolFact>): SymbolFact {
   return byId.get(id)!;
 }
 
 /** Resolve a bare name or qualified id to a symbol; ambiguous names yield candidates. */
-export function resolveSymbol(b: BuildResult, name: string): { sym?: SymbolFact; ambiguous?: boolean; candidates?: { id: string; file: string; line: number }[] } {
+function resolveSymbol(b: BuildResult, name: string): { sym?: SymbolFact; ambiguous?: boolean; candidates?: { id: string; file: string; line: number }[] } {
   const byId = new Map(b.graph.symbols.map((s) => [s.id, s]));
   const byName = new Map<string, SymbolFact[]>();
   for (const s of b.graph.symbols) byName.set(s.name, [...(byName.get(s.name) ?? []), s]);

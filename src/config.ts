@@ -23,7 +23,7 @@ function configDir(): string {
   return path.join(base, "context");
 }
 
-export function configPath(): string {
+function configPath(): string {
   return path.join(configDir(), "config.json");
 }
 

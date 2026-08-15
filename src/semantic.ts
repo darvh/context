@@ -45,7 +45,7 @@ const DEFAULT_MODEL = "Xenova/all-MiniLM-L6-v2";
 
 /** Env wins over config, config over default. Cached per process. */
 let modelMemo: string | null = null;
-export async function modelName(): Promise<string> {
+async function modelName(): Promise<string> {
   if (modelMemo) return modelMemo;
   const env = process.env.CONTEXT_MODEL;
   if (env) return (modelMemo = env);

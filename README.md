@@ -15,8 +15,7 @@ ranking.
 ```text
 context observe "<task>" [--budget N] [--json] [--root DIR]
                [--ignore pat[,pat]] [--no-gitignore]
-context find "<query>" [--budget N] [--json] [--root DIR]
-context map <directory|symbol> [--root DIR]
+context map <directory> [--root DIR]
 context follow <symbol|qualified-id> [<edge>] [--root DIR]
 context expand <handle|file:line> [--root DIR]
 context impact <symbol|qualified-id|--diff> [--json] [--root DIR]
@@ -29,13 +28,13 @@ context --help
 context --version   prints version, build commit, cache schema, runtime kind
 ```
 
-`observe`/`find`/`prepare` are the same orientation command (Observe is
-navigation, `find` is the same machinery used for exact local evidence).
+`observe` (alias `prepare`) is orientation: DirMap, neighborhoods, spans.
 `map` compiles a bounded local RepoMap over one directory (per-file symbols,
-calls, tests) or one symbol (callers/callees/tests, one hop). `follow` walks
-one edge kind (callers, callees, tests, inherit, implement, contain, ref,
-import, all) with bounded depth and short trails. Ambiguous bare names list
-their qualified candidates instead of silently picking the first.
+calls, tests). `follow` walks one edge kind (callers, callees, tests, inherit,
+implement, contain, ref, import, all) with bounded depth and short trails.
+`impact` is the symbol map (callers/callees/relations/tests) plus `--diff`.
+Ambiguous bare names list their qualified candidates instead of silently
+picking the first.
 
 `--targets` rejects unknown agent names (exit 1, lists known targets).
 `context config` reads/writes `~/.config/context/config.json` (honors

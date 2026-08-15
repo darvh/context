@@ -23,7 +23,7 @@ export async function expandFromCapsule(capsule: Capsule | null, handle: string)
   return expandFile(abs, hit.line);
 }
 
-export async function expandSpan(file: string, startLine: number, endLine: number): Promise<Expanded | null> {
+async function expandSpan(file: string, startLine: number, endLine: number): Promise<Expanded | null> {
   try {
     const all = (await fs.readFile(file, "utf8")).split("\n");
     let from = Math.max(0, startLine - 1 - CONTEXT_LINES);
@@ -35,7 +35,7 @@ export async function expandSpan(file: string, startLine: number, endLine: numbe
   }
 }
 
-export async function expandFile(file: string, centerLine: number): Promise<Expanded | null> {
+async function expandFile(file: string, centerLine: number): Promise<Expanded | null> {
   return expandSpan(file, centerLine, centerLine);
 }
 

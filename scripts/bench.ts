@@ -29,28 +29,13 @@ import type { RankedHit } from "../src/query";
  *   bun run bench -- --json out.json   # raw per-task rows
  */
 
-const ROOT = path.join(import.meta.dir, "..");
-const FIXTURES = path.join(ROOT, "spike", "fixtures");
-const REAL_OUT = path.join(ROOT, "var", "real-eval");
+import { cloneReal, loadFixtureTasks, loadRealTasks, FIXTURES, type Task } from "./eval-shared";
+
 const BUDGET = 1200;
 const args = process.argv.slice(2);
 const useReal = args.includes("--real") || args.includes("real");
 const jsonArg = args.indexOf("--json");
 const jsonOut = jsonArg >= 0 ? args[jsonArg + 1] : null;
-
-interface Task {
-  id: string;
-  repo: string;
-  query: string;
-  type: string;
-  topK: number;
-  expectedFiles: string[];
-  expectedSymbols: string[];
-  changed: string[];
-  directories?: string[];
-  edges?: string[][];
-  why?: string;
-}
 
 interface TaskRow {
   id: string;
@@ -67,34 +52,18 @@ interface VariantResult {
   rows: TaskRow[];
 }
 
-const fixtureTasks = JSON.parse(await fs.readFile(path.join(ROOT, "eval", "tasks.json"), "utf8")).tasks as Task[];
+const fixtureTasks = await loadFixtureTasks();
 let allTasks = fixtureTasks;
 if (useReal) {
-  const real = JSON.parse(await fs.readFile(path.join(ROOT, "eval", "real-tasks.json"), "utf8")).tasks as Task[];
-  allTasks = [...real, ...fixtureTasks];
+  allTasks = [...(await loadRealTasks()), ...fixtureTasks];
 }
 
 // clone pinned real repos (same mechanism as eval)
 const taskDirs = new Map<string, string>();
 for (const t of allTasks) taskDirs.set(t.repo, path.join(FIXTURES, t.repo));
 if (useReal) {
-  const repos = JSON.parse(await fs.readFile(path.join(ROOT, "eval", "real-tasks.json"), "utf8")).repos as { name: string; url: string; revision: string }[];
-  for (const r of repos) {
-    if (!allTasks.some((t) => t.repo === r.name)) continue;
-    const dst = path.join(REAL_OUT, r.name);
-    const p = Bun.spawn({ cmd: ["git", "-C", dst, "rev-parse", "HEAD"], stdout: "pipe", stderr: "pipe" });
-    const head = (await new Response(p.stdout).text()).trim();
-    if (head !== r.revision) {
-      await fs.rm(dst, { recursive: true, force: true }).catch(() => {});
-      const cl = Bun.spawn({ cmd: ["git", "clone", "-q", "--no-checkout", r.url, dst], stdout: "pipe", stderr: "pipe" });
-      if ((await cl.exited) === 0) {
-        const co = Bun.spawn({ cmd: ["git", "-C", dst, "checkout", "-q", r.revision], stdout: "pipe", stderr: "pipe" });
-        if ((await co.exited) === 0) taskDirs.set(r.name, dst);
-      }
-    } else {
-      taskDirs.set(r.name, dst);
-    }
-  }
+  const cloned = await cloneReal(new Set(allTasks.map((t) => t.repo)));
+  for (const [name, dir] of cloned) taskDirs.set(name, dir);
 }
 
 async function runVariant(name: string, task: Task, buildCache: Map<string, Awaited<ReturnType<typeof build>>>): Promise<{ row: TaskRow; hits: RankedHit[]; capsule: ReturnType<typeof assemble> }> {

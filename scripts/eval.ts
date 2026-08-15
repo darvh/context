@@ -28,29 +28,15 @@ import type { RankedHit } from "../src/query";
  *   bun run eval -- --json out.json   # raw per-task results
  */
 
+import { cloneReal, loadFixtureTasks, loadRealTasks, FIXTURES, REAL_OUT, type Task } from "./eval-shared";
+
 const BUDGET_TOKENS = 1200;
 
-const ROOT = path.join(import.meta.dir, "..");
-const FIXTURES = path.join(ROOT, "spike", "fixtures");
-const REAL_OUT = path.join(ROOT, "var", "real-eval");
 const args = process.argv.slice(2);
 const useReal = args.includes("--real") || args.includes("real");
 const useSemantic = args.includes("--semantic") || (await semanticEnabled());
 const jsonArg = args.indexOf("--json");
 const jsonOut = jsonArg >= 0 ? args[jsonArg + 1] : null;
-
-interface Task {
-  id: string;
-  repo: string;
-  query: string;
-  type: string;
-  topK: number;
-  expectedFiles: string[];
-  expectedSymbols: string[];
-  changed: string[];
-  why?: string;
-  fixture?: boolean;
-}
 
 interface TaskResult {
   id: string;
@@ -81,47 +67,6 @@ function percentiles(ms: number[]): { p50: number; p95: number } {
   const s = [...ms].sort((a, b) => a - b);
   const p = (q: number) => s[Math.min(s.length - 1, Math.floor(q * s.length))];
   return { p50: p(0.5), p95: p(0.95) };
-}
-
-async function cloneReal(tasks: Task[]): Promise<string[]> {
-  const need = [...new Set(tasks.map((t) => t.repo))];
-  const repos = JSON.parse(await fs.readFile(path.join(ROOT, "eval", "real-tasks.json"), "utf8")).repos as {
-    name: string;
-    url: string;
-    revision: string;
-  }[];
-  const cloned: string[] = [];
-  for (const r of repos) {
-    if (!need.includes(r.name)) continue;
-    const dst = path.join(REAL_OUT, r.name);
-    try {
-      const st = await fs.stat(path.join(dst, ".git"));
-      const p = Bun.spawn({ cmd: ["git", "-C", dst, "rev-parse", "HEAD"], stdout: "pipe", stderr: "pipe" });
-      const head = (await new Response(p.stdout).text()).trim();
-      if (st.isDirectory() && head === r.revision) {
-        cloned.push(dst);
-        continue;
-      }
-    } catch {}
-    await fs.rm(dst, { recursive: true, force: true }).catch(() => {});
-    console.log(`eval: cloning ${r.name} @ ${r.revision}`);
-    const p = Bun.spawn({
-      cmd: ["git", "clone", "-q", "--no-checkout", r.url, dst],
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    if ((await p.exited) !== 0) {
-      console.log(`eval: clone failed for ${r.name}; skipping its tasks`);
-      continue;
-    }
-    const co = Bun.spawn({ cmd: ["git", "-C", dst, "checkout", "-q", r.revision], stdout: "pipe", stderr: "pipe" });
-    if ((await co.exited) !== 0) {
-      console.log(`eval: pinned revision ${r.revision} unavailable for ${r.name}; skipping`);
-      continue;
-    }
-    cloned.push(dst);
-  }
-  return cloned;
 }
 
 async function runVariant(name: string, tasks: Task[], taskDirs: Map<string, string>, hybrid: boolean, semantic: boolean): Promise<VariantResult> {
@@ -254,16 +199,11 @@ function perTask(variants: VariantResult[]) {
   }
 }
 
-const fixtureTasks: Task[] = (JSON.parse(await fs.readFile(path.join(ROOT, "eval", "tasks.json"), "utf8")).tasks as Task[]).map((t) => ({
-  ...t,
-  fixture: true,
-  why: t.why ?? "fixture task: regression gate on a known-shape repository",
-}));
+const fixtureTasks: Task[] = await loadFixtureTasks();
 
 let allTasks = fixtureTasks;
 if (useReal) {
-  const realTasks: Task[] = JSON.parse(await fs.readFile(path.join(ROOT, "eval", "real-tasks.json"), "utf8")).tasks;
-  allTasks = [...realTasks, ...fixtureTasks];
+  allTasks = [...(await loadRealTasks()), ...fixtureTasks];
 }
 
 const taskDirs = new Map<string, string>();
@@ -272,8 +212,8 @@ for (const t of allTasks) {
   taskDirs.set(t.repo, src);
 }
 if (useReal) {
-  const cloned = await cloneReal(allTasks);
-  for (const c of cloned) taskDirs.set(path.basename(c), c);
+  const cloned = await cloneReal(new Set(allTasks.map((t) => t.repo)));
+  for (const [name, dir] of cloned) taskDirs.set(name, dir);
 }
 
 const variants: VariantResult[] = [];

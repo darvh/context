@@ -20,7 +20,7 @@ import { createHash } from "node:crypto";
  * lane embeds the full bounded text and only BM25 indexes sections.)
  */
 
-export interface DocSection {
+interface DocSection {
   text: string;
   /** 1-based start line in the source file; 1 when the format has no lines (anydoc) */
   line: number;
@@ -81,9 +81,9 @@ const ANYDOC_EXTS = new Set([
 ]);
 
 export const MAX_DOC_BYTES = 50 * 1024 * 1024; // skip monsters
-export const MAX_DOC_CHARS = 64_000; // bound whole-doc text (semantic lane)
-export const MAX_SECTION_CHARS = 4_000; // bound each retrieval unit (BM25 lane)
-export const MAX_SECTIONS = 40; // cap units per doc
+const MAX_DOC_CHARS = 64_000; // bound whole-doc text (semantic lane)
+const MAX_SECTION_CHARS = 4_000; // bound each retrieval unit (BM25 lane)
+const MAX_SECTIONS = 40; // cap units per doc
 
 export function isDocFile(path: string): boolean {
   const i = path.lastIndexOf(".");
@@ -101,7 +101,7 @@ function cleanText(raw: string): string {
  * end line. Headings and paragraph runs become separate units; the whole
  * document is never one row.
  */
-export function splitSections(text: string): DocSection[] {
+function splitSections(text: string): DocSection[] {
   const lines = text.split("\n");
   const out: DocSection[] = [];
   let cur = "";

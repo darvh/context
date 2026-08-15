@@ -14,6 +14,8 @@
     "bench": "bun run scripts/bench.ts",
     "fixture": "bun run scripts/gen-fixture.ts",
     "grammars": "bun run scripts/embed-grammars.ts",
+    "dup": "npx jscpd src scripts eval",
+    "unused": "npx knip",
     "build": "bun run scripts/embed-grammars.ts && mkdir -p dist && bun run scripts/package.ts && bun build --compile src/cli.ts --outfile dist/context && bash scripts/sign.sh dist/context",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
@@ -38,6 +40,8 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "jscpd": "^5.0.15",
+    "knip": "^6.32.2",
     "typescript": "^7.0.2"
   }
 }

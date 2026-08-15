@@ -26,12 +26,13 @@ const EXTRACTOR_MAP: Record<string, Extractor> = {
   sh: extractGeneric,
 };
 
-export function extractorFor(lang: string): Extractor | null {
+function extractorFor(lang: string): Extractor | null {
   return EXTRACTOR_MAP[lang] ?? null;
 }
 
 export async function extractFile(file: string, lang: string, source: string, hash: string): Promise<FileFacts> {
   const ctx = newCtx(file, lang, hash, source);
+  const finish = (langName: string): FileFacts => ({ file, lang: langName, hash, symbols: ctx.symbols, edges: ctx.edges, imports: ctx.imports });
   const ext = extractorFor(lang);
   if (ext) {
     const parsed = await parse(lang, source);
@@ -42,20 +43,20 @@ export async function extractFile(file: string, lang: string, source: string, ha
       } finally {
         parsed.dispose();
       }
-      return { file, lang, hash, symbols: ctx.symbols, edges: ctx.edges, imports: ctx.imports };
+      return finish(lang);
     }
     // grammar unavailable at runtime (missing wasm): fall back to rg heuristics
     if (rgLangFor(file) || lang !== "rg") {
       extractRg(ctx);
-      return { file, lang: rgLangFor(file) ?? lang, hash, symbols: ctx.symbols, edges: ctx.edges, imports: ctx.imports };
+      return finish(rgLangFor(file) ?? lang);
     }
-    return { file, lang, hash, symbols: [], edges: [], imports: [] };
+    return finish(lang);
   }
   // rg fallback: line-based heuristics, no WASM needed — supports 20+ langs via rules.ts
   const rgLang = rgLangFor(file) ?? lang;
   if (rgLang) {
     extractRg(ctx);
-    return { file, lang: rgLang, hash, symbols: ctx.symbols, edges: ctx.edges, imports: ctx.imports };
+    return finish(rgLang);
   }
-  return { file, lang, hash, symbols: [], edges: [], imports: [] };
+  return finish(lang);
 }

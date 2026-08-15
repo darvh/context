@@ -1,10 +1,10 @@
 import type { BuildResult } from "./build";
-import { follow, renderFollow, resolveSymbol, type TrailStep } from "./follow";
 import type { SymbolFact } from "./facts";
 
 /** Neighborhood RepoMap: a small, relationship-centered textual map over one
- *  directory or one symbol, compiled from the cached graph per request. Not a
- *  second search index — bounded, grouped by file and role. */
+ *  directory, compiled from the cached graph per request. Not a second search
+ *  index — bounded, grouped by file and role. Symbol maps live in `impact`
+ *  (callers/callees/tests) and `follow` (trails); map is the directory lane. */
 
 const DIR_FILES_MAX = 12;
 const FILE_SYMS_MAX = 5;
@@ -44,24 +44,4 @@ export function mapDir(b: BuildResult, dir: string): { blocks: FileBlock[]; trun
     blocks.push({ file: f, syms, calls: [...calls].slice(0, SYM_EDGES_MAX), testedBy: [...testedBy].slice(0, SYM_EDGES_MAX) });
   }
   return { blocks, truncated };
-}
-
-/** Relationship-centered map of one symbol: one hop, grouped by role and file. */
-export function mapSymbol(b: BuildResult, name: string): { out: string; truncated: boolean } {
-  const r = follow(b, name, "all", 1);
-  if (r.ambiguous || !r.symbol || !r.trails.length) return { out: renderFollow(r), truncated: false };
-  const lines: string[] = [];
-  lines.push(`map: ${r.symbol.name} (${r.symbol.kind}) ${r.symbol.file}:${r.symbol.nameLine}`);
-  lines.push(`sig: ${r.symbol.sig}`);
-  const byRole = new Map<string, TrailStep[]>();
-  for (const t of r.trails) {
-    const s = t.steps[1];
-    const role = s!.edge === "test" ? "tests" : s!.edge === "call" || s!.edge === "ref" ? (s!.dir === "out" ? "callees" : "callers") : "relations";
-    byRole.set(role, [...(byRole.get(role) ?? []), s!]);
-  }
-  const byFile = (xs: TrailStep[]) => [...new Map(xs.map((x) => [`${x.file}:${x.line}`, x])).values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
-  for (const [role, xs] of byRole) {
-    lines.push(`  ${role}: ${byFile(xs).slice(0, 6).map((x) => `${x.name} ${x.file}:${x.line}`).join(", ")}`);
-  }
-  return { out: lines.join("\n"), truncated: r.truncated };
 }

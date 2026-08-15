@@ -100,15 +100,16 @@ these correctness and compression problems are fixed.
   fixture `cmd/migrate/migrate.go` with zero topical affinity).
 - Vectors 3–6, 8 done. DirMap L0 (`src/dirmap.ts`) ranks directories by task
   affinity, never symbol count, and appears as the capsule `dirs` section.
-  Neighborhood RepoMap (`src/repo-map.ts`, `context map <dir|symbol>`) and
+  Neighborhood RepoMap (`src/repo-map.ts`, `context map <dir>`) and
   graph trails (`src/follow.ts`, `context follow <symbol> <edge>`) compile a
   bounded local map from the cached graph per request. Symbol identity is
   navigation-safe: ambiguous bare names surface qualified candidates
   (`file::name::line`) instead of silently picking the first. Every hit now
   carries its full source range and `context expand` returns the recorded span
   with bounded context. Doc hits carry section ordinal and heading. Ops:
-  `observe`/`find`/`prepare` (orientation), `map`, `follow`, `expand`,
-  `impact` (qualified-id aware).
+  `observe`/`prepare` (orientation), `map <dir>`, `follow`, `expand`,
+  `impact` (qualified-id aware). `find` and `map <symbol>` were cut as pure
+  duplicates — see Vector 8.
 - Bench replaced: `scripts/bench.ts` is the variant idea checker (flat /
   DirMap / +RepoMap / +trails) over the pinned eval corpus, reporting per-task
   file/dir/trail recall and token deltas. Disposable spike wrappers removed
@@ -279,40 +280,36 @@ Expose explicit operations with distinct contracts:
 
 ```text
 observe(task)                 # repository and directory orientation
-map(directory-or-handle)      # deeper local map
+map(directory)                # deeper local map
 follow(symbol, edge)          # graph navigation
-find(query)                   # exact local evidence
 expand(file-or-handle)        # bounded source/document range
 impact(symbol-or-diff)        # callers, tests, and changes
 ```
 
-`map` accepts either a directory or a qualified symbol:
+Trimmed during implementation: `find` was cut (identical machinery to
+`observe` — a pure alias) and `map(symbol)` was cut (its callers/callees/tests
+output duplicates `impact`; `follow` covers trails). Symbol navigation is
+`impact` + `follow`; `map` is the directory lane.
+
+`map(directory)` produces a compact local RepoMap:
 
 ```text
-map("src/auth/")
-map("src/auth/token.ts::TokenService.refresh::184")
+src/auth/
+  service.ts
+    function authenticate()  auth.authenticate(user, pass)
+    calls → validateRefreshToken() (service.ts:52)
+    tested_by → token-service.test.ts
+  middleware.ts
+    ...
 ```
 
-`map(directory)` produces a compact local RepoMap. `map(symbol)` compiles a
-bounded relationship-centered RepoMap when graph edges exist:
-
-```text
-TokenService.refresh()
-  callers: AuthController.refresh()
-  callees: validateRefreshToken(), rotateSession()
-  tests: rejectsExpiredRefreshToken()
-  related files: controller.ts, session.ts, token.test.ts
-```
-
-It must not dump the whole graph. Start with one hop, group results by file and
-role, preserve edge type and confidence, and return handles for `follow` and
-`find`. The result is a context compiler over a selected neighborhood, not a
-second global search index.
-
-`follow(symbol, edge)` is the lower-level directional traversal primitive. It
-should support callers, callees, implementations, inheritance, tests,
-configuration, and other known edge kinds, with bounded depth and result count.
-`impact` remains a convenience summary built on these relationships.
+It must not dump the whole graph. Bound files and symbols per file, group
+calls and tests per file, and keep the output small enough to render directly.
+The result is a context compiler over a selected neighborhood, not a second
+global search index. `impact` remains the symbol map (callers/callees/tests),
+built on the same edges; `follow` is the directional traversal primitive with
+bounded depth and result count. `impact`/`follow` accept qualified ids
+(`file::name::line`) and never silently pick the first same-name symbol.
 
 The current mechanically generated `next` list should become type-aware:
 observe a directory when the directory is uncertain, follow an edge when the

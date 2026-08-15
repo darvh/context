@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-export type LangName = 'go' | 'ts' | 'js' | 'py' | 'java' | 'rb' | 'rs' | 'c' | 'cpp' | 'cs' | 'php' | 'sh' | 'kt' | 'swift';
+type LangName = 'go' | 'ts' | 'js' | 'py' | 'java' | 'rb' | 'rs' | 'c' | 'cpp' | 'cs' | 'php' | 'sh' | 'kt' | 'swift';
 
 export interface LangConf {
   name: LangName;

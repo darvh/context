@@ -1,0 +1,13 @@
+{
+  "minTokens": 40,
+  "ignore": [
+    "spike/fixtures/**",
+    "spike/grammars/**",
+    "node_modules/**",
+    "var/**",
+    "dist/**",
+    "tests/**",
+    "scripts/hook-*.ts"
+  ],
+  "ignoreComment": "Deliberate duplicates: tests (fixture shape), hook scripts (standalone single-file agent adapters, must not share imports)."
+}

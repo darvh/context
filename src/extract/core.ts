@@ -51,7 +51,7 @@ export function walk(n: Node): Node[] {
   return out;
 }
 
-export function declName(n: Node): string {
+function declName(n: Node): string {
   const f = childField(n, "name");
   if (f) return f.text;
   const first = n.namedChild(0);
@@ -60,7 +60,7 @@ export function declName(n: Node): string {
 
 /** signature = source text up to first `{` (or `=>` / `->`) trimmed to one line.
  * Python headers end with `:` so take the whole first line. */
-export function signatureOf(n: Node, source: string, lang = "go"): string {
+function signatureOf(n: Node, source: string, lang = "go"): string {
   const text = n.text;
   if (SIG_LANG_SPECIAL[lang] === "first-line-only") {
     return text.split("\n")[0].trim();
@@ -72,7 +72,7 @@ export function signatureOf(n: Node, source: string, lang = "go"): string {
   return text.replace(/\s+/g, " ").trim().slice(0, 120);
 }
 
-export function docAbove(ctx: Ctx, n: Node): string {
+function docAbove(ctx: Ctx, n: Node): string {
   const start = n.startPosition.row;
   const out: string[] = [];
   for (let i = start - 1; i >= 0 && i >= start - 5; i--) {
@@ -140,7 +140,7 @@ export function classifyFile(file: string, lang: string): { isTest: boolean; isE
   return { isTest, isEntry, isConfig };
 }
 
-export function getRouteRule(lang: string) {
+function getRouteRule(lang: string) {
   return ROUTE_RULES[lang] ?? null;
 }
 export function isRouteCall(lang: string, method: string, base: string): boolean {
@@ -176,11 +176,6 @@ export function addRouteSymbol(ctx: Ctx, node: Node, object: string, property: s
   s.name = path;
   ctx.edges.push({ from: s.id, to: toId, name: path, kind: toId ? "call" : "ref", conf: "heuristic", at: `${ctx.file}:${node.startPosition.row + 1}` });
   return s;
-}
-
-export interface ExtractResult {
-  ctx: Ctx;
-  dispose: () => void;
 }
 
 export type Extractor = (root: Node, ctx: Ctx) => void;
