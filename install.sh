@@ -12,7 +12,7 @@ targets="all"
 version=""
 force=0
 dry_run=0
-hooks=0
+hooks=1 # hooks install by default; --no-hooks opts out
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --local) mode="local" ;;
@@ -23,14 +23,15 @@ while [[ $# -gt 0 ]]; do
     --force) force=1 ;;
     --dry-run) dry_run=1 ;;
     --hooks) hooks=1 ;;
+    --no-hooks) hooks=0 ;;
     *) echo "context: unknown option: $1" >&2; exit 2 ;;
   esac
   shift
 done
 
 user_home="${HOME:?HOME is not set}"
-install_root="$user_home/.local/share/context"
-bin_dir="$user_home/.local/bin"
+install_root="$user_home/.context"
+bin_dir="$user_home/.context/bin"
 source_path="${BASH_SOURCE[0]:-}"
 source_dir=""
 if [[ -n "$source_path" ]]; then
@@ -94,10 +95,11 @@ install_from_source() {
   runtime_root="${install_root:-$source_dir}"
   if [[ "$mode" == "local" ]]; then runtime_root="$source_dir"; fi
   init_args=(--targets "$targets")
-  [[ "$mode" == "local" ]] && init_args+=(--project --root "$PWD")
+  # global-only install: never writes project scope
   [[ "$force" == 1 ]] && init_args+=(--force)
+  init_args+=(--create) # installer creates absent home-scope agent dirs
   [[ "$dry_run" == 1 ]] && init_args+=(--dry-run)
-  [[ "$hooks" == 1 ]] && init_args+=(--hooks)
+  [[ "$hooks" == 0 ]] && init_args+=(--no-hooks)
   bun run "$runtime_root/src/cli.ts" init "${init_args[@]}"
 }
 

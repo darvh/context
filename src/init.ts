@@ -33,7 +33,10 @@ export interface InitOptions {
   force: boolean;
   dryRun: boolean;
   only: string[]; // agent names; empty = all
-  hooks: boolean; // also install hook adapters (explicit opt-in)
+  hooks: boolean; // install hook adapters (default; --no-hooks opts out)
+  /** installer mode: create absent home-scope agent dirs instead of
+   *  reporting agent-miss (manual `context init` never creates silently) */
+  create?: boolean;
 }
 
 // Compiled binaries bundle src/ into $bunfs; the real skill/ ships NEXT to the
@@ -91,11 +94,11 @@ export async function init(opts: InitOptions): Promise<InitResult[]> {
 
   for (const t of agents) {
     const dir = resolveAgent(t, opts);
-    if (!opts.project && !(await exists(dir))) {
+    if (!opts.project && !opts.create && !(await exists(dir))) {
       out.push({ agent: t.name, what: "skill", dir, status: "agent-miss" });
       continue; // absent home-scope agent dir: report, never create silently
     }
-    if (opts.project && !opts.dryRun) await fs.mkdir(dir, { recursive: true });
+    if (!opts.dryRun) await fs.mkdir(dir, { recursive: true });
 
     const dstDir = path.join(dir, "context");
     if (!opts.dryRun) await fs.mkdir(dstDir, { recursive: true });
@@ -122,8 +125,8 @@ export async function init(opts: InitOptions): Promise<InitResult[]> {
   return out;
 }
 
-// --hooks installs hook adapters for hosts that support them. Explicit opt-in
-// (never silent). claude-code is the adapted host today; others are reported.
+// --no-hooks is the opt-out; hooks install by default for hosts that support
+// them (never silently — each host gets an explicit config entry).
 async function installHooks(opts: InitOptions): Promise<InitResult[]> {
   const out: InitResult[] = [];
   const repo = path.join(import.meta.dir, "..");
@@ -137,7 +140,7 @@ async function installHooks(opts: InitOptions): Promise<InitResult[]> {
         ? path.join(opts.repo, ".claude", "settings.json")
         : path.join(homedir(), ".claude", "settings.json");
       const dir = path.dirname(settingsPath);
-      if (!opts.project && !(await exists(dir))) {
+      if (!opts.project && !opts.create && !(await exists(dir))) {
         out.push({ agent: t.name, what: "hooks-config", dir, status: "agent-miss" });
         continue;
       }
@@ -161,6 +164,83 @@ async function installHooks(opts: InitOptions): Promise<InitResult[]> {
       await fs.writeFile(settingsPath, JSON.stringify(cfg, null, 2) + "\n");
       out.push({ agent: t.name, what: "hooks-config", dir: settingsPath, status: "updated" });
       out.push({ agent: t.name, what: "hook-user", dir: userHook, status: "installed" });
+      out.push({ agent: t.name, what: "hook-agent", dir: agentHook, status: "installed" });
+    } else if (t.name === "opencode") {
+      // opencode has no prompt-injection hook; the compaction hook keeps the
+      // context capsule alive across session compaction. Plugin file, not a
+      // JSON entry. Defensive: unknown input shapes degrade to no-op.
+      const pluginsDir = opts.project ? path.join(opts.repo, ".opencode", "plugins") : path.join(homedir(), ".config", "opencode", "plugins");
+      const pluginPath = path.join(pluginsDir, "context.ts");
+      const plugin = `export const ContextCompactionPlugin = async ({ directory, $ }) => {
+  let lastTask = "";
+  const capture = (text) => {
+    if (text && text.trim().length >= 40) lastTask = text.trim();
+  };
+  return {
+    event: async ({ event }) => {
+      try {
+        const msg = event?.message ?? event?.data?.message;
+        const text = msg?.text ?? msg?.content ?? (typeof msg === "string" ? msg : "");
+        if (Array.isArray(text)) text.forEach(capture);
+        else capture(text);
+      } catch {}
+    },
+    "experimental.session.compacting": async (input, output) => {
+      try {
+        if (!lastTask || !directory) return;
+        const cap = await $\`context observe \${lastTask} --budget 600 --json\`.text();
+        const c = JSON.parse(cap);
+        output.context.push(\`[context capsule — navigation only]
+working_tree: \${c.workingTree ?? ""}
+directories: \${(c.dirs ?? []).map((d) => d.path).join(", ")}
+paths: \${(c.files ?? []).join(", ")}
+hits: \${(c.hits ?? []).map((h) => \`\${h.name} \${h.file}:\${h.line}\`).join("; ")}
+expand with: context expand \${c.hits?.[0]?.handle ?? ""}\`);
+      } catch {}
+    },
+  };
+};
+`;
+      await fs.mkdir(pluginsDir, { recursive: true });
+      const existing = await fs.readFile(pluginPath, "utf8").catch(() => "");
+      if (existing && existing !== plugin && !opts.force) {
+        out.push({ agent: t.name, what: "hooks-config", dir: pluginPath, status: "conflict", note: "existing plugin; use --force to overwrite" });
+        continue;
+      }
+      if (opts.dryRun) {
+        out.push({ agent: t.name, what: "hooks-config", dir: pluginPath, status: "updated", note: "dry-run" });
+        continue;
+      }
+      await fs.writeFile(pluginPath, plugin);
+      out.push({ agent: t.name, what: "hooks-config", dir: pluginPath, status: "installed" });
+    } else if (t.name === "codex") {
+      // codex supports Stop/PreToolUse/PostToolUse events via ~/.codex/hooks.json
+      // (same shape as claude settings hooks). No prompt-injection event exists,
+      // so the agent hook (savings telemetry) is what wires here.
+      const hooksPath = opts.project ? path.join(opts.repo, ".codex", "hooks.json") : path.join(homedir(), ".codex", "hooks.json");
+      const dir = path.dirname(hooksPath);
+      if (!opts.project && !opts.create && !(await exists(dir))) {
+        out.push({ agent: t.name, what: "hooks-config", dir, status: "agent-miss" });
+        continue;
+      }
+      await fs.mkdir(dir, { recursive: true });
+      let cfg: any = {};
+      try {
+        cfg = JSON.parse(await fs.readFile(hooksPath, "utf8"));
+      } catch {}
+      const hooks = cfg.hooks ?? {};
+      if (hooks.Stop) {
+        out.push({ agent: t.name, what: "hooks-config", dir: hooksPath, status: "conflict", note: "existing Stop hooks; use --force to overwrite" });
+        if (!opts.force || opts.dryRun) continue;
+      }
+      if (opts.dryRun) {
+        out.push({ agent: t.name, what: "hooks-config", dir: hooksPath, status: "updated", note: "dry-run" });
+        continue;
+      }
+      hooks.Stop = [{ hooks: [{ type: "command", command: agentHook, timeout: 5000 }] }];
+      cfg.hooks = hooks;
+      await fs.writeFile(hooksPath, JSON.stringify(cfg, null, 2) + "\n");
+      out.push({ agent: t.name, what: "hooks-config", dir: hooksPath, status: "updated" });
       out.push({ agent: t.name, what: "hook-agent", dir: agentHook, status: "installed" });
     } else {
       out.push({ agent: t.name, what: "hooks-config", dir: "", status: "unselected", note: "hook wiring not shipped for this host yet" });

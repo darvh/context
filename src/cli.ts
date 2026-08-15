@@ -239,16 +239,19 @@ async function cmdInit(args: Args, rest: string[]) {
   let project = false;
   let force = false;
   let dryRun = false;
-  let hooks = false;
+  let noHooks = false;
+  let create = false;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--project") project = true;
     else if (a === "--force") force = true;
     else if (a === "--dry-run") dryRun = true;
-    else if (a === "--hooks") hooks = true;
+    else if (a === "--no-hooks") noHooks = true;
+    else if (a === "--create") create = true;
     else if (a === "--targets") targets = rest[++i] ?? "all";
     else if (a.startsWith("--targets=")) targets = a.slice(10);
   }
+  const hooks = !noHooks; // hooks install by default; --no-hooks opts out
   const only = targets === "all" ? [] : targets.split(",").map((s) => s.trim()).filter(Boolean);
   const { init, agentPaths, AGENT_NAMES } = await import("./init");
   const unknown = only.filter((n) => !AGENT_NAMES.includes(n));
@@ -257,8 +260,8 @@ async function cmdInit(args: Args, rest: string[]) {
     process.exit(1);
   }
   const repo = project ? (await (await import("./scan")).findRoot(args.root)) ?? args.root : "";
-  console.log(`context init (targets: ${targets}, ${project ? "project" : "user"} scope${hooks ? ", hooks" : ""})`);
-  for (const r of await init({ project, repo, force, dryRun, only, hooks })) {
+  console.log(`context init (targets: ${targets}, ${project ? "project" : "user"} scope${hooks ? ", hooks" : ", no hooks (--no-hooks)"})`);
+  for (const r of await init({ project, repo, force, dryRun, only, hooks, create })) {
     const note = r.note ? ` ${r.note}` : "";
     const loc = r.status === "unselected" ? "" : r.dir;
     console.log(`  ${r.agent.padEnd(11)}  ${r.what.padEnd(12)}  ${r.status.padEnd(10)}  ${loc}${note}`);

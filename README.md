@@ -1,8 +1,9 @@
 # Context
 
 Deterministic discovery compiler for coding agents. Turns a task plus the
-current working tree into a small, source-backed context capsule — no model,
-no embeddings, no repo-local state.
+current working tree into a small, source-backed context capsule — the
+deterministic core needs no model, no embeddings, and no repo-local state
+(an opt-in local semantic lane exists for weak queries).
 
 Per `meta/cross-product/context.md` and `context-implementation-plan.md`:
 Bun/TypeScript MVP, Tree-sitter for Go / TypeScript / JavaScript / Python (bespoke
@@ -16,7 +17,7 @@ ranking.
 context observe "<task>" [--budget N] [--json] [--root DIR]
                [--ignore pat[,pat]] [--no-gitignore]
 context map <directory> [--root DIR]
-context follow <symbol|qualified-id> [<edge>] [--root DIR]
+context follow <symbol|qualified-id> [<edge>|symbol2] [--root DIR]
 context expand <handle|file:line> [--root DIR]
 context impact <symbol|qualified-id|--diff> [--json] [--root DIR]
                [--ignore pat[,pat]] [--no-gitignore]
@@ -28,13 +29,15 @@ context --help
 context --version   prints version, build commit, cache schema, runtime kind
 ```
 
-`observe` (alias `prepare`) is orientation: DirMap, neighborhoods, spans.
-`map` compiles a bounded local RepoMap over one directory (per-file symbols,
-calls, tests). `follow` walks one edge kind (callers, callees, tests, inherit,
-implement, contain, ref, import, all) with bounded depth and short trails.
-`impact` is the symbol map (callers/callees/relations/tests) plus `--diff`.
-Ambiguous bare names list their qualified candidates instead of silently
-picking the first.
+`observe` (alias `prepare`) is orientation: DirMap, neighborhoods, spans, and a
+`confidence` label (`strong` / `weak` / `conflicted` / `empty`). `map`
+compiles a bounded local RepoMap over one directory (per-file symbols, calls,
+tests). `follow` walks one edge kind (callers, callees, tests, inherit,
+implement, contain, ref, import, all) with bounded depth and short trails;
+`follow <symbol> <symbol2>` renders the minimal connecting subgraph between
+two symbols. `impact` is the symbol map (callers/callees/relations/tests +
+`documented_by` docs) plus `--diff`. Ambiguous bare names list their qualified
+candidates (`file::name::line`) instead of silently picking the first.
 
 `--targets` rejects unknown agent names (exit 1, lists known targets).
 `context config` reads/writes `~/.config/context/config.json` (honors
@@ -90,12 +93,12 @@ plus a `.sha256` checksum file.
 
 ```text
 bun install
-bun run context prepare "where is session persistence handled?" --root <repo>
+bun run context observe "where is session persistence handled?" --root <repo>
 bun test               # unit + smoke (launcher, cache safety, incremental)
 bun run fixture        # generate the deterministic large-repo fixture (small)
 bun run eval           # retrieval eval -> fixture subset (CI, no network)
 bun run eval -- real   # + pinned real repos (clones at fixed revisions)
-bun run bench          # variant idea checker: flat / DirMap / RepoMap / trails
+bun run bench          # observation ablation: flat / DirMap / RepoMap / trails
 bun run dup            # jscpd duplication check (src + eval scripts)
 bun run unused         # knip unused-code check
 bun run build          # standalone binary -> ./dist/context
@@ -104,11 +107,32 @@ bash scripts/smoke.sh ./dist/context   # clean-environment smoke suite
 
 ## Retrieval
 
-Ranking fuses graph relationships, changed-file, explicit-path, and
-entry-point signals (authoritative) with two fallback lanes:
+The authoritative lane fuses graph relationships, changed-file, explicit-path,
+entry-point, and exact-name signals; BM25 and the optional semantic lane append
+below, never re-rank. Each hit's `reason` lists the signals that matched.
 
+- **Graph + lexical** (`src/query.ts`): symbol terms are name + signature +
+  doc + path + bounded **runtime strings** from the symbol body (so a query
+  quoting an error/log/config string matches lexically) + **irregular-form
+  expansion** (`kept` → `keep`). Propagation is 2-hop, degree-capped; imports
+  are evidence edges, never ranking targets.
+- **Intent-gated lanes** (only fire when the task asks):
+  - *diagnostic-first*: a task naming a failing test verbatim pins it
+    (`test-name-pin`), stack `file:line` refs are explicit-file pins;
+  - *negative constraints*: "not tests", "without legacy", "only config
+    under X" penalize the excluded scope before propagation;
+  - *recent-change*: only boosts files the task is already about (or an
+    explicit recent-work query); dirty files live in a bounded `changed`
+    section, separate from relevance;
+  - *co-change*: for explicit history/regression intent, files that changed
+    together in the last commits boost each other;
+  - *session-delta*: symbols already shown this task session get a novelty
+    penalty (disposable per-tree state, no profiling).
 - **BM25** (`src/bm25.ts`): SQLite FTS5/BM25, porter-stemmed, one row per
   symbol plus one row per non-code document *section*.
+- **Typed artifacts** (`src/artifacts.ts`): env vars (`process.env.X`,
+  `os.Getenv(...)`, `ENV[...]`, ...) and config keys (`config.get("key")`)
+  become first-class config symbols, so `DATABASE_URL` resolves exactly.
 - **Docs lane** (`src/doc.ts`): non-code files (markdown/text read directly;
   Word/Excel/PowerPoint/OpenDocument/RTF/EPUB/PDF converted by
   `@firecrawl/anydoc` — a local Rust core, no LLM, no network) are indexed by
@@ -116,33 +140,49 @@ entry-point signals (authoritative) with two fallback lanes:
   (headings / paragraph runs, ≤4KB each, ≤40 per doc) that carry their source
   start and end line, so a 25KB file cannot bury its answer and `context
   expand` lands on the section that matched (a doc hit's range covers the
-  whole section). They never enter the symbol graph; a matching doc carries a
+  whole section; binary formats expand from the cached extracted Markdown,
+  never raw bytes). They never enter the symbol graph; a matching doc carries a
   real BM25 score so a documentation query surfaces its document.
-- Each hit's `reason` lists the signals that matched.
+- **Code↔doc links** (`src/links.ts`): exact-token/path mentions of exported
+  symbols in document sections produce deterministic links; `impact` shows
+  `documented_by`.
+- **Compiler-backed overlay** (`src/overlay.ts`, `src/scip.ts`): a binary SCIP
+  index (`index.scip`) or a documented JSON facts file (`.context/facts.json`)
+  merges into the tree-sitter graph — exact definitions, references, and
+  implementations upgrade confidence. Tree-sitter behavior is unchanged when
+  no overlay exists; Context never generates indexes itself.
+
+### Budget-aware packing
+
+The capsule is selected by utility per serialized token — relevance ×
+confidence × novelty — with authoritative pins first and minimal orientation
+(top directory + top hit) guaranteed. The budget is truthful: measured on the
+final serialized form (both renderings); `tokensUsed` is the real cost,
+including its own literal.
 
 ### Evaluation
 
 `bun run eval` runs two task sets and reports per-task rows, not just
 aggregates, so a retrieval change is accepted or rejected on real-data
-evidence:
+evidence. Per task it measures: file/symbol recall, MRR, exact-evidence-range
+recall, unrelated items in the capsule (pure dirty-driven hits; 0 across the
+pinned corpus), calls-to-evidence (rank of the first expected file), serialized
+tokens vs budget (a violation exits 1), plus cold/warm latency and index size.
 
 - `eval/tasks.json` — deterministic fixture subset (regression gates on
   known-shape repos; runs in CI, no network). Tasks record expected files,
-  symbols, directories, edges, and changed files (dirty-tree gates), plus
-  `bun run eval` enforces the serialized capsule budget per task (a violation
-  exits 1).
+  symbols, directories, edges, evidence ranges, dirty files, and semantic
+  needle queries (reported separately as ceiling tasks, never as misses).
 - `eval/real-tasks.json` — reviewed tasks over pinned revisions of real
-  repositories (gorilla/mux, express, flask), each recording query type,
-  acceptable top-`k`, expected files/symbols, and why the answer is relevant.
-  `bun run eval -- real` clones at the pinned revisions and reports
-  baseline vs hybrid vs semantic (`--semantic`) with per-task regressions and
-  raw JSON (`--json out.json`).
+  repositories (gorilla/mux, express, flask). `bun run eval -- real` clones at
+  the pinned revisions and reports baseline vs hybrid vs semantic
+  (`--semantic`) with per-task regressions and raw JSON (`--json out.json`).
 
-`bun run bench` is the variant idea checker: one pinned corpus, one budget,
-four observation variants (flat hits / +DirMap / +neighborhood RepoMap /
-+graph trails). It reports per-task deltas in file, directory, and trail
-recall plus serialized tokens, so an observation change is accepted or
-rejected per task rather than on an aggregate headline.
+`bun run bench` is the observation ablation: retrieval is shared, and flat /
+DirMap / RepoMap / trails vary what the agent observes, each against a declared
+budget (observe 1200; map/trails follow-up calls 400 each, reported
+separately). A variant ships only when recall does not regress and it stays
+within its budget.
 
 ### Semantic fallback (optional, local)
 
@@ -182,6 +222,8 @@ skips. The Bun source entrypoint (launcher fallback, installer source path)
 runs the full lane. `context --version` reports which runtime you are on, and
 `scripts/smoke.sh` verifies the boundary against a clean install.
 
+## Cache
+
 Cache lives in `$XDG_CACHE_HOME/context` (default `~/.cache/context`). Every
 cache/capsule/hook/semantic file is keyed by the canonical path of the
 directory actually walked — the git repo root when a hook maps the whole repo,
@@ -196,25 +238,27 @@ stale text. Parsing, document conversion, and embedding batches are bounded
 by timeouts and fail open, so a slow converter or model never hangs a command.
 Working-tree edits (staged, unstaged, untracked) are visible on the next call.
 
+Git is optional: without a git binary every lane fails open (no changed
+context, `git_head` omitted, co-change dormant) and retrieval is unaffected.
+
 The installed command self-tests the compiled binary and falls back to the Bun
 source entrypoint when the host cannot execute compiled binaries (wrong arch,
 missing loader). See `scripts/mk-launcher.sh`.
 
 ## Invariants
 
-- No model calls, annotations, embeddings, or API keys.
+- No model calls, annotations, embeddings, or API keys (semantic is opt-in).
 - No repository-local generated files; never writes into the project.
 - Every assertion points to source and labels resolution quality.
 - Deterministic output for a fixed tree + task.
 - Emits `context:telemetry <json>` on stderr; all token counts are `estimated`.
 - The capsule budget is truthful: measured on the final serialized form (both
-  renderings), with a deterministic drop order (entry points → unresolved →
-  files → DirMap → changed → next → hits); `tokensUsed` is the real cost,
-  including its own literal.
+  renderings); `tokensUsed` is the real cost, including its own literal.
 - Observe is L0 → L1 → L2: a compact DirMap of the top task-affine
   directories first, then a neighborhood RepoMap (`map`), then exact evidence
-  (`expand`/`find`). DirMap ranks directories by task affinity, never by
-  symbol count alone.
+  (`expand`). DirMap ranks directories by task affinity, never by symbol
+  count alone; the capsule reports its confidence (`strong`/`weak`/
+  `conflicted`/`empty`).
 - Changed files live in a bounded `changed` section, separate from task
   relevance; recent-change only boosts symbols the task is already about (or
   a query explicitly about recent work).
@@ -234,17 +278,22 @@ missing loader). See `scripts/mk-launcher.sh`.
 - Parsing, conversion, and embedding work is time-bounded and fail-open: a
   slow stage degrades the output, never hangs the command.
 - Retrieval changes ship with reproducible evidence: `bun run eval` per-task
-  regressions on pinned real revisions, `bun run bench` budgets + preserved
-  failure corpus.
+  regressions on pinned revisions, `bun run bench` budgets per variant.
 
 ## Hooks (host adapters, both fail open)
 
 - `scripts/hook-user.ts` — UserPromptSubmit: injects one compact capsule per
-  (task, working-tree) pair; never rewrites commands or mutates the repo.
+  (task, working-tree) pair: DirMap cards first (task-affine directories, plus
+  the directories of any attached files, marked `[attached]`), then paths and
+  relevant symbols — symbols already shown this session are flagged
+  `(already shown)` (one-time full orientation, then only what is new). Never
+  rewrites commands or mutates the repo.
 - `scripts/hook-agent.ts` — agent-response (Claude Code `Stop`): reads the
   projected savings the user hook stored and emits a Graft-style
-  `~X tokens saved (Y%, net ~Z after capsule)` line. **User-visible only** —
-  it is telemetry, never injected back into the model context.
+  `~X tokens saved (Y%, net ~Z after capsule)` line. **Telemetry, not a chat
+  line**: Claude Code does not render Stop-hook output, so the projection
+  reaches hook logs, not the conversation, and is never injected back into the
+  model context.
 
 Savings projection (`src/savings.ts`) estimates the input tokens the capsule
 replaces (its pointed-at source spans) minus capsule tokens; `estimated`, per

@@ -14,13 +14,6 @@ function projDir(): string {
   return path.join(tmpdir(), "ctx-proj-" + Date.now() + "-" + Math.random().toString(36).slice(2));
 }
 
-async function run(cmd: string[], cwd: string): Promise<{ code: number; out: string; err: string }> {
-  const p = Bun.spawn({ cmd, cwd, stdout: "pipe", stderr: "pipe" });
-  const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
-  const code = await p.exited;
-  return { code, out, err };
-}
-
 describe("install.sh", () => {
   test("global dry-run prints plan and exits 0", async () => {
     const { code, out } = await run(["bash", INSTALL, "--dry-run"], REPO);
@@ -37,18 +30,44 @@ describe("install.sh", () => {
     await fs.rm(proj, { recursive: true, force: true });
   });
 
-  test("local project mode installs the skill without touching the checkout", async () => {
+  test("local install is user-scope only: skill + hooks land in HOME, never the project", async () => {
     const proj = projDir();
+    const home = path.join(tmpdir(), "ctx-home-" + Date.now() + "-" + Math.random().toString(36).slice(2));
     await fs.mkdir(proj, { recursive: true });
-    const { code, out } = await run(["bash", INSTALL, "--local", "--targets", "pi"], proj);
+    await fs.mkdir(home, { recursive: true });
+    const { code, out } = await run(["bash", INSTALL, "--local", "--targets", "pi"], proj, home);
     expect(code).toBe(0);
     expect(out).toContain("pi");
-    const skill = path.join(proj, ".agents", "skills", "context", "SKILL.md");
+    // user scope: skill in $HOME, never in the project dir
+    const skill = path.join(home, ".agents", "skills", "context", "SKILL.md");
     expect(existsSync(skill)).toBe(true);
     expect(await fs.readFile(skill, "utf8")).toContain("context observe");
+    expect(existsSync(path.join(proj, ".agents"))).toBe(false);
+    expect(existsSync(path.join(proj, ".opencode"))).toBe(false);
     await fs.rm(proj, { recursive: true, force: true });
+    await fs.rm(home, { recursive: true, force: true });
+  });
+
+  test("hooks install by default; --no-hooks opts out", async () => {
+    const proj = projDir();
+    const home = path.join(tmpdir(), "ctx-home-" + Date.now() + "-" + Math.random().toString(36).slice(2));
+    await fs.mkdir(proj, { recursive: true });
+    await fs.mkdir(home, { recursive: true });
+    await run(["bash", INSTALL, "--local", "--targets", "claude-code,opencode"], proj, home);
+    expect(existsSync(path.join(home, ".claude", "settings.json"))).toBe(true);
+    expect(existsSync(path.join(home, ".config", "opencode", "plugins", "context.ts"))).toBe(true);
+    await fs.rm(proj, { recursive: true, force: true });
+    await fs.rm(home, { recursive: true, force: true });
   });
 });
+
+async function run(cmd: string[], cwd: string, home?: string): Promise<{ code: number; out: string; err: string }> {
+  const env = { ...Bun.env, HOME: home ?? Bun.env.HOME, PATH: `/usr/local/bin:/opt/homebrew/bin:${Bun.env.PATH}` };
+  const p = Bun.spawn({ cmd, cwd, env, stdout: "pipe", stderr: "pipe" });
+  const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
+  const code = await p.exited;
+  return { code, out, err };
+}
 
 describe("installer launcher", () => {
   test("passes through a healthy compiled binary exit code", async () => {

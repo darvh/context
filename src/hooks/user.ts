@@ -1,8 +1,9 @@
 import { build } from "../build";
 import { findRoot } from "../scan";
-import { rankSymbols } from "../query";
+import { rankSymbols, explicitFilesFromTask } from "../query";
 import { buildBm25Index } from "../bm25";
 import { assemble } from "../assemble";
+import { buildDirCards, dirOf } from "../dirmap";
 import { estTokens } from "../tokens";
 import { projectSavings, type Savings } from "../savings";
 import { hookStatePath, readJson, writeJson } from "../cache";
@@ -54,32 +55,53 @@ export async function runHook(task: string, cwd: string, opts: HookOpts = {}): P
       .digest("hex")
       .slice(0, 16);
     const statePath = hookStatePath(repoRoot);
-    const state = await readJson<{ key: string }>(statePath);
+    const state = await readJson<{ key: string; seen?: { tree: string; items: string[] } }>(statePath);
     if (state && state.key === key) return done(); // already injected for this state
+    // session-delta: hits already shown for this tree are flagged, not
+    // re-served as new (one-time full orientation, then only what is new)
+    const seenItems = state?.seen?.tree === b.treeHash ? new Set(state.seen.items) : undefined;
 
     const bm25 = b.graph.symbols.length ? buildBm25Index(b.graph) : undefined;
-    const hits = rankSymbols({ task, graph: b.graph, changed, explicitFiles: [], bm25 });
+    const explicit = explicitFilesFromTask(task, b.files);
+    const hits = rankSymbols({ task, graph: b.graph, changed, explicitFiles: explicit, bm25 });
     const capsule = assemble({ task, build: b, hits, budgetTokens: HOOK_BUDGET, changed });
     if (!capsule.hits.length) {
       await writeJson(statePath, { key }).catch(() => {});
       return done(); // low confidence: preserve normal tool fallback
     }
 
+    // orientation: DirMap L0 first, then the file-attachment neighborhood.
+    // The first injection carries the task's directory cards; when the task
+    // names files (attachments), their directories' cards are shown too.
+    const cards = buildDirCards(b);
     const block: string[] = [];
     block.push(`[context capsule — navigation only, not evidence]`);
     block.push(`working_tree: ${capsule.workingTree}`);
+    if (capsule.dirs.length) {
+      block.push(`directories:`);
+      for (const d of capsule.dirs.slice(0, 2)) {
+        block.push(`- ${d.path}/ (${d.files} files, ${d.lang})${d.surface.length ? ` public: ${d.surface.join(", ")}` : ""}`);
+      }
+      for (const f of explicit.slice(0, 2)) {
+        const dc = cards.get(dirOf(f));
+        if (dc && !capsule.dirs.some((d) => d.path === dc.path)) {
+          block.push(`- ${dc.path}/ (${dc.files} files, ${dc.lang})${dc.surface.length ? ` public: ${dc.surface.join(", ")}` : ""}  [attached]`);
+        }
+      }
+    }
     block.push(`paths:`);
     for (const f of capsule.files) block.push(`- ${f}`);
     block.push(`relevant symbols:`);
     for (const h of capsule.hits.slice(0, 6)) {
-      block.push(`- ${h.kind} ${h.name} ${h.file}:${h.line} (${h.conf})`);
+      const seen = seenItems?.has(`${h.file}:${h.line}`) ? " (already shown)" : "";
+      block.push(`- ${h.kind} ${h.name} ${h.file}:${h.line} (${h.conf})${seen}`);
     }
     block.push(`hint: expand with \`context expand ${capsule.hits[0]?.handle}\``);
     out.hookSpecificOutput = { additionalContext: block.join("\n") };
 
     // project Graft-style savings from the spans the capsule replaces
     const savings = await projectSavings(b, capsule);
-    await writeJson(statePath, { key, savings }).catch(() => {});
+    await writeJson(statePath, { key, seen: { tree: b.treeHash, items: capsule.hits.map((h) => `${h.file}:${h.line}`) }, savings }).catch(() => {});
     console.error("context:telemetry " + JSON.stringify({ cmd: "hook", capsuleTokens: capsule.tokensUsed, savedTokens: savings.savedTokens, savedPct: Math.round(savings.savedPct), outputTokens: estTokens(JSON.stringify(out)), totalMs: Math.round(performance.now() - t0) }));
     return done();
   } catch {

@@ -55,8 +55,10 @@ describe("context init", () => {
   test("hooks: hosts without wiring report unselected", async () => {
     const repo = path.join(import.meta.dir, "..", "var", "init-hooks-" + Date.now());
     await fs.mkdir(repo, { recursive: true });
-    const r = await init({ project: true, repo, force: false, dryRun: false, only: ["opencode"], hooks: true });
+    const r = await init({ project: true, repo, force: false, dryRun: false, only: ["cursor"], hooks: true });
     expect(r.find((x) => x.what === "hooks-config")?.status).toBe("unselected");
+    const oc = await init({ project: true, repo, force: false, dryRun: false, only: ["opencode"], hooks: true });
+    expect(oc.find((x) => x.what === "hooks-config")?.status).toBe("installed");
     await fs.rm(repo, { recursive: true, force: true });
   });
 });
