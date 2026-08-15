@@ -199,7 +199,7 @@ describe("diagnostic and constraint lanes", () => {
 
 describe("irregular morphology + artifacts", () => {
   test("kept expands to keep for matching", async () => {
-    const { expandIrregular } = await import("../src/query");
+    const { expandIrregular } = await import("../src/rules");
     expect(expandIrregular("kept")).toEqual(["kept", "keep"]);
     expect(expandIrregular("store")).toEqual(["store"]);
   });
