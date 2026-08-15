@@ -573,7 +573,9 @@ export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs, c
     // explicit file reference
     const explicit = explicitFiles.includes(s.file);
     if (explicit) {
-      st.score += 3;
+      // An explicit path is the user's disambiguation; it must lead related
+      // concept matches (not merely survive into top-k).
+      st.score += 20;
       addReason(s.id, "explicit-file");
     }
     // recent changes only boost files the task is already about (topical

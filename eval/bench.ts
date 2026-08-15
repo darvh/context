@@ -44,10 +44,14 @@ const jsonOut = jsonArg >= 0 ? args[jsonArg + 1] : null;
 
 interface TaskRow {
   id: string;
+  recallFiles1: number;
+  recallFiles3: number;
   recallFiles: number;
   recallSymbols: number;
   dirRecall: number;
+  dirMeasured: boolean;
   trailRecall: number;
+  trailMeasured: boolean;
   tokens: Record<string, number>;
   budgetViolation: Record<string, boolean>;
 }
@@ -96,7 +100,12 @@ async function runTask(task: Task, b: Awaited<ReturnType<typeof build>>, bm25: R
   const obs = observationTokens(capsule, b);
 
   const topK = hits.slice(0, task.topK);
-  const topFiles = [...new Set(topK.map((h) => h.symbol.file))];
+  const rankedFiles = [...new Set(hits.map((h) => h.symbol.file))];
+  const recallAt = (k: number) => {
+    const files = rankedFiles.slice(0, k);
+    return task.expectedFiles.length ? task.expectedFiles.filter((f) => files.includes(f)).length / task.expectedFiles.length : 1;
+  };
+  const topFiles = rankedFiles.slice(0, task.topK);
   const hitFiles = task.expectedFiles.filter((f) => topFiles.includes(f));
   const hitSyms = task.expectedSymbols.filter((n) => topK.map((h) => h.symbol.name).includes(n));
 
@@ -126,10 +135,14 @@ async function runTask(task: Task, b: Awaited<ReturnType<typeof build>>, bm25: R
 
   return {
     id: task.id,
+    recallFiles1: recallAt(1),
+    recallFiles3: recallAt(3),
     recallFiles: task.expectedFiles.length ? hitFiles.length / task.expectedFiles.length : 1,
     recallSymbols: task.expectedSymbols.length ? hitSyms.length / task.expectedSymbols.length : 1,
     dirRecall,
+    dirMeasured: expectedDirs.length > 0,
     trailRecall,
+    trailMeasured: Boolean(task.edges?.length),
     tokens,
     budgetViolation: violation,
   };
@@ -154,19 +167,25 @@ for (const repo of taskDirs.keys()) {
 const rows: TaskRow[] = [];
 for (const t of allTasks) rows.push(await runTask(t, builds.get(t.repo)!, bm25s.get(t.repo)!, dirCards.get(t.repo)!));
 
-console.log(`\nper-task (shared recall: files% / dir% / trail% — tokens flat/dirmap/map/trails — budget):`);
+console.log(`\nper-task (shared recall: files@1/@3/@k / dir / trail — tokens flat/dirmap/map/trails — budget):`);
 let regressed = 0;
 for (const r of rows) {
   const file = r.recallFiles < 1 ? "fileLOW" : "";
-  const dirs = r.dirRecall < 1 ? `dirLOW(${r.dirRecall.toFixed(2)})` : "";
-  const tr = r.trailRecall < 1 ? `trailLOW(${r.trailRecall.toFixed(2)})` : "";
+  const dirs = r.dirMeasured && r.dirRecall < 1 ? `dirLOW(${r.dirRecall.toFixed(2)})` : "";
+  const tr = r.trailMeasured && r.trailRecall < 1 ? `trailLOW(${r.trailRecall.toFixed(2)})` : "";
   const viol = Object.values(r.budgetViolation).some(Boolean) ? "BUDGET" : "";
   const flags = [file, dirs, tr, viol].filter(Boolean).join(",");
   if (flags) regressed++;
   const tks = `f:${r.tokens.flat} d:${r.tokens.dirmap} m:${r.tokens.map} t:${r.tokens.trails}`;
-  console.log(`  ${r.id.padEnd(14)} ${(r.recallFiles * 100).toFixed(0).padStart(3)}% / ${(r.dirRecall * 100).toFixed(0).padStart(3)}% / ${(r.trailRecall * 100).toFixed(0).padStart(3)}%  ${tks.padEnd(40)} ${flags || "ok"}`);
+  const dir = r.dirMeasured ? `${(r.dirRecall * 100).toFixed(0).padStart(3)}%` : "  -";
+  const trail = r.trailMeasured ? `${(r.trailRecall * 100).toFixed(0).padStart(3)}%` : "  -";
+  console.log(`  ${r.id.padEnd(14)} ${(r.recallFiles1 * 100).toFixed(0).padStart(3)}% / ${(r.recallFiles3 * 100).toFixed(0).padStart(3)}% / ${(r.recallFiles * 100).toFixed(0).padStart(3)}% / ${dir} / ${trail}  ${tks.padEnd(40)} ${flags || "ok"}`);
 }
 console.log(`\n${regressed}/${rows.length} tasks flagged (shared recall is the ship gate; recall is identical across variants by design — variants only change the observation)`);
+const measuredDirs = rows.filter((r) => r.dirMeasured);
+const measuredTrails = rows.filter((r) => r.trailMeasured);
+const mean = (xs: TaskRow[], f: (r: TaskRow) => number) => xs.length ? xs.reduce((s, r) => s + f(r), 0) / xs.length : null;
+console.log(`measured averages: files@1 ${((mean(rows, r => r.recallFiles1) ?? 0) * 100).toFixed(1)}%  files@3 ${((mean(rows, r => r.recallFiles3) ?? 0) * 100).toFixed(1)}%  files@k ${((mean(rows, r => r.recallFiles) ?? 0) * 100).toFixed(1)}%  dir ${measuredDirs.length ? (mean(measuredDirs, r => r.dirRecall)! * 100).toFixed(1) + "%" : "N/A"}  trail ${measuredTrails.length ? (mean(measuredTrails, r => r.trailRecall)! * 100).toFixed(1) + "%" : "N/A"}`);
 
 const byVariant: VariantResult[] = ["flat", "dirmap", "map", "trails"].map((name) => ({
   name,

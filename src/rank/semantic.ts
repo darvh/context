@@ -34,12 +34,13 @@ import { meaningfulTerms } from "./query";
  * lexical/graph result (fail open).
  */
 
-export const SEMANTIC_VERSION = "semantic-v4";
+export const SEMANTIC_VERSION = "semantic-v5";
 
 const DTYPE = "q8";
 const POOLING = "mean";
 const BATCH = 64;
 const MAX_SNIPPET_LINES = 20;
+const MAX_NEIGHBORS = 6;
 const MIN_SIM = 0.2;
 const EMBED_TIMEOUT_MS = 60_000; // per batch; expiry fails the lane, never hangs the command
 // MiniLM is the default that works with zero config. Code-tuned models
@@ -258,10 +259,30 @@ export async function semanticSearch(
     for (let j = 0; j < dim; j++) q[j] /= nrm;
     // imports are structural, not semantic: excluded. Docs embed their whole
     // extracted text (isolated sections score below the sim floor).
+    const byId = new Map(graph.symbols.map((s) => [s.id, s]));
+    const neighbors = new Map<string, string[]>();
+    const addNeighbor = (id: string, label: string) => {
+      const list = neighbors.get(id) ?? [];
+      if (!list.includes(label) && list.length < MAX_NEIGHBORS) list.push(label);
+      neighbors.set(id, list);
+    };
+    for (const e of graph.edges) {
+      const from = byId.get(e.from);
+      const to = byId.get(e.to);
+      if (from && to) {
+        addNeighbor(from.id, `${e.kind} ${to.name}`);
+        addNeighbor(to.id, `${e.kind}-by ${from.name}`);
+      }
+    }
     const symbolTargets = [
       ...graph.symbols
         .filter((s) => s.kind !== "import")
-        .map((s) => ({ id: s.id, span: s.span as Span, file: s.file, text: `${s.name} ${s.sig} ${s.doc} ${s.file}` })),
+        .map((s) => ({
+          id: s.id,
+          span: s.span as Span,
+          file: s.file,
+          text: `${s.name} ${s.sig} ${s.doc} ${s.file} ${s.strings?.join(" ") ?? ""} ${(neighbors.get(s.id) ?? []).join(" ")}`,
+        })),
       ...docs.map((d) => ({ id: `doc::${d.file}`, file: d.file, text: d.text })),
     ];
     const dirTargets = dirRecords(graph).map((d) => ({ id: `dir::${d.path}`, file: d.path, text: d.text }));

@@ -460,6 +460,131 @@
       ],
       "changed": [],
       "why": "runtime strings: a body string literal must match lexically without embeddings"
+    },
+    {
+      "id": "g-multi-1",
+      "repo": "go",
+      "query": "which files connect HTTP session routes to persistence",
+      "type": "cross-file",
+      "topK": 8,
+      "expectedFiles": [
+        "internal/http/routes.go",
+        "internal/session/store.go"
+      ],
+      "expectedSymbols": [
+        "NewHandler",
+        "OpenStore"
+      ],
+      "changed": [],
+      "directories": [
+        "internal/http",
+        "internal/session"
+      ],
+      "why": "cross-file: an observe answer must retain both the route boundary and persistence implementation"
+    },
+    {
+      "id": "t-path-dup-1",
+      "repo": "typescript",
+      "query": "fix src/http/router.ts rather than the session store",
+      "type": "path",
+      "topK": 3,
+      "expectedFiles": [
+        "src/http/router.ts"
+      ],
+      "expectedSymbols": [],
+      "changed": [],
+      "why": "path disambiguation: an explicit nested path must beat a related concept"
+    },
+    {
+      "id": "p-negative-1",
+      "repo": "python",
+      "query": "where is the production session store, not the tests",
+      "type": "negative",
+      "topK": 5,
+      "expectedFiles": [
+        "app/session/store.py"
+      ],
+      "expectedSymbols": [
+        "Store",
+        "open_store"
+      ],
+      "changed": [],
+      "why": "negative intent: production code should outrank the similarly named test file"
+    },
+    {
+      "id": "t-cross-1",
+      "repo": "typescript",
+      "query": "trace the request from the app entrypoint into the session router",
+      "type": "cross-file",
+      "topK": 8,
+      "expectedFiles": [
+        "src/index.ts",
+        "src/http/router.ts"
+      ],
+      "expectedSymbols": [
+        "main",
+        "router"
+      ],
+      "changed": [],
+      "directories": [
+        "src",
+        "src/http"
+      ],
+      "why": "cross-file: entrypoint-to-router wiring should survive coarse-to-fine observation"
+    },
+    {
+      "id": "g-doc-2",
+      "repo": "go",
+      "query": "operator handbook retention window",
+      "type": "doc-paraphrase",
+      "topK": 5,
+      "expectedFiles": [
+        "docs/archiver-policy.rtf"
+      ],
+      "expectedSymbols": [],
+      "changed": [],
+      "directories": [
+        "docs"
+      ],
+      "why": "doc paraphrase: the answer exists only in extracted prose"
+    },
+    {
+      "id": "g-evidence-2",
+      "repo": "go",
+      "query": "where does Get read values that were persisted",
+      "type": "evidence",
+      "topK": 5,
+      "expectedFiles": [
+        "internal/session/store.go"
+      ],
+      "expectedSymbols": [
+        "Get"
+      ],
+      "changed": [],
+      "evidence": [
+        [
+          "internal/session/store.go",
+          23,
+          31
+        ]
+      ],
+      "why": "evidence: a symbol hit is insufficient unless the relevant implementation span is reachable"
+    },
+    {
+      "id": "t-config-flow-1",
+      "repo": "typescript",
+      "query": "where is the listening port read before the server starts",
+      "type": "config-flow",
+      "topK": 5,
+      "expectedFiles": [
+        "src/index.ts"
+      ],
+      "expectedSymbols": [
+        "PORT",
+        "main"
+      ],
+      "changed": [],
+      "why": "config flow: an environment symbol and its runtime consumer belong in one observation"
     }
   ]
 }
