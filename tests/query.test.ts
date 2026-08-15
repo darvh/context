@@ -24,7 +24,7 @@ const graph: Graph = {
   imports: [],
 };
 
-const doc: DocFact = { file: "docs/mod.md", text: "moda module docs", hash: "h", size: 10, mtimeMs: 0 };
+const doc: DocFact = { file: "docs/mod.md", text: "moda module docs", sections: [{ text: "moda module docs", line: 1 }], hash: "h", size: 10, mtimeMs: 0 };
 
 describe("rankSymbols hybrid fusion", () => {
   test("out-of-range doc rowid skips the doc hit, keeps bm25 symbol hits", () => {
@@ -42,5 +42,29 @@ describe("rankSymbols hybrid fusion", () => {
     const out = rankSymbols({ task: "moda", graph, changed: new Set(), explicitFiles: [], bm25: idx, docs: [doc] });
     expect(out.some((h) => h.symbol.id === "doc::docs/mod.md")).toBe(true);
     expect(out.some((h) => h.symbol.id === "src/b.ts::import::1")).toBe(true);
+  });
+});
+
+describe("long-doc section indexing", () => {
+  const longDoc: DocFact = {
+    file: "docs/guide.md",
+    text: "first section only\nsecond section only\nthird section only",
+    sections: [
+      { text: "first section only", line: 1 },
+      { text: "second section only", line: 3 },
+      { text: "third section only", line: 5 },
+    ],
+    hash: "h",
+    size: 10,
+    mtimeMs: 0,
+  };
+
+  test("a query matching only one section surfaces that section's line", () => {
+    const idx = buildBm25Index(graph, [longDoc]);
+    const out = rankSymbols({ task: "third section", graph, changed: new Set(), explicitFiles: [], bm25: idx, docs: [longDoc] });
+    const docHit = out.find((h) => h.symbol.id === "doc::docs/guide.md");
+    expect(docHit).toBeDefined();
+    expect(docHit!.symbol.nameLine).toBe(5);
+    expect(docHit!.reason).toContain("doc-match");
   });
 });

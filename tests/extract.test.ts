@@ -65,6 +65,9 @@ describe("structural extraction", () => {
     expect(names).toContain("function:test_store_persists_across_get_set");
     const store = b.graph.symbols.find((s) => s.name === "open_store")!;
     expect(store.sig).toContain("def open_store");
+    // decorated definitions (decorated_definition nodes) are unwrapped, not dropped
+    expect(names).toContain("function:decorated_helper");
+    expect(names).toContain("method:method");
   });
 
   test("AST generic extractor: java/rb/rs/c/cpp/cs/php/sh", async () => {

@@ -4,6 +4,7 @@ import path from "node:path";
 import type { Graph, Span } from "./facts";
 import type { DocFact } from "./doc";
 import { cacheDir, atomicWrite } from "./cache";
+import { withTimeout } from "./async";
 
 /**
  * Optional local semantic fallback (plan Phase 5). Explicitly opt-in via
@@ -38,6 +39,7 @@ const POOLING = "mean";
 const BATCH = 64;
 const MAX_SNIPPET_LINES = 20;
 const MIN_SIM = 0.2;
+const EMBED_TIMEOUT_MS = 60_000; // per batch; expiry fails the lane, never hangs the command
 
 const DEFAULT_MODEL = "Xenova/all-MiniLM-L6-v2";
 
@@ -108,32 +110,6 @@ async function snippet(fileText: string, span: Span): Promise<string> {
   const from = Math.max(0, span.sl - 1);
   const to = Math.min(ls.length, from + MAX_SNIPPET_LINES);
   return ls.slice(from, to).join(" ").slice(0, 400);
-}
-
-const MAX_SECTION_CHARS = 1500;
-
-/** Split a doc into retrievable sections (headings for markdown, paragraph runs otherwise). */
-export function splitDocSections(text: string): string[] {
-  const lines = text.split("\n");
-  const out: string[] = [];
-  let cur = "";
-  const flush = () => {
-    if (cur.trim().length >= 20 && cur.length <= MAX_SECTION_CHARS * 2) out.push(cur.trim());
-    cur = "";
-  };
-  for (const line of lines) {
-    if (/^#{1,6}\s/.test(line)) {
-      if (cur.trim().length >= 20) flush();
-      cur = line + "\n";
-    } else if (/^\s*$/.test(line) && cur.trim().length >= 60) {
-      flush();
-    } else {
-      cur += line + "\n";
-    }
-    if (cur.length >= MAX_SECTION_CHARS) flush();
-  }
-  flush();
-  return out.slice(0, 40).map((s) => s.slice(0, MAX_SECTION_CHARS));
 }
 
 const HASH_BYTES = 16; // sha256 prefix per vector; content-addresses the store
@@ -219,7 +195,8 @@ async function embedSymbols(
   // embed only the delta
   for (let i = 0; i < missing.length; i += BATCH) {
     const batch = missing.slice(i, i + BATCH);
-    const v = await p(batch.map((m) => m.text), { pooling: POOLING, normalize: true });
+    const v = await withTimeout(EMBED_TIMEOUT_MS, p(batch.map((m) => m.text), { pooling: POOLING, normalize: true }), null);
+    if (!v) throw new Error("embedding batch timed out"); // -> semanticSearch catch -> fail open
     for (let j = 0; j < batch.length; j++) {
       store.set(batch[j].hash, v.data.slice(j * dim, (j + 1) * dim));
     }

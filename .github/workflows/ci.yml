@@ -22,6 +22,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Generate large-repo fixture (deterministic, no downloads)
+        run: bun run fixture --size small
+
       - name: Run tests
         run: bun test
 
@@ -36,3 +39,18 @@ jobs:
           ./dist/context --help >/dev/null
           # real parse exercises grammar discovery + wasm init (--help does not)
           cp -R spike/fixtures/multilang /tmp/ml && ./dist/context prepare "MyClass" --root /tmp/ml >/dev/null
+
+      - name: Smoke suite (compiled artifact, clean environment)
+        run: bash scripts/smoke.sh ./dist/context
+
+      - name: Smoke suite (installed launcher over the same artifact)
+        run: |
+          root="$(mktemp -d)"
+          cp -R dist "$root/dist"
+          cp -R skill "$root/skill"
+          cp -R src scripts "$root/"
+          bash scripts/mk-launcher.sh "$root" "$root/bin"
+          bash scripts/smoke.sh "$root/bin/context"
+
+      - name: Deterministic retrieval eval (fixture subset, no network)
+        run: bun run eval

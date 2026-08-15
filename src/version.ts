@@ -1,9 +1,10 @@
 import pkg from "../package.json" with { type: "json" };
 import { CACHE_VERSION } from "./cache";
 
-/** Bun-compiled binaries have no import.meta.dir; the source runtime does. */
+/** Bun-compiled binaries run from the embedded $bunfs filesystem; the source
+ * runtime runs from a real checkout. */
 export function runtimeKind(): "compiled" | "source" {
-  return import.meta.dir ? "source" : "compiled";
+  return import.meta.dir?.startsWith("/$bunfs") ? "compiled" : "source";
 }
 
 async function gitHead(): Promise<string | null> {

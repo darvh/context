@@ -13,6 +13,7 @@
     "spike": "bun run spike/bench.ts",
     "eval": "bun run scripts/eval.ts",
     "bench": "bun run scripts/bench.ts",
+    "fixture": "bun run scripts/gen-fixture.ts",
     "grammars": "bun run scripts/embed-grammars.ts",
     "build": "bun run scripts/embed-grammars.ts && mkdir -p dist && bun run scripts/package.ts && bun build --compile src/cli.ts --outfile dist/context && bash scripts/sign.sh dist/context",
     "typecheck": "tsc --noEmit",

@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { Database } from "bun:sqlite";
+import pkg from "../package.json" with { type: "json" };
 import { build } from "../src/build";
 import { rankSymbols, terms, appendSemanticHits } from "../src/query";
 import { buildBm25Index, bm25Query } from "../src/bm25";
@@ -19,10 +20,17 @@ import type { RankedHit } from "../src/query";
  * and latency grouped by difficulty, baseline vs hybrid (and semantic when
  * enabled).
  *
+ * Every run writes the corpus MANIFEST (seed, environment, versions, full task
+ * list), RAW per-task results, and a FAILURE CORPUS (every confirmed miss) to
+ * var/bench-<seed>-<size>/ so retrieval changes are reproducible and misses
+ * are preserved before any ranking change. Declared latency/memory/index
+ * budgets are enforced per size and warn when exceeded.
+ *
  *   bun run bench                    # synthetic only (medium)
  *   bun run bench --size small|large
  *   bun run bench --real             # + cloned repos + real downloaded docs
  *   bun run bench --seed 42 --semantic
+ *   bun run bench --semantic --models "A,B"   # compare models on hard slices
  */
 
 const SIZES: Record<string, number> = { small: 10, medium: 40, large: 120 };
@@ -33,6 +41,16 @@ const size = SIZES[sizeName] ?? SIZES.medium;
 const seed = Number(args.find((a) => a.startsWith("--seed="))?.split("=")[1] ?? 7);
 const useSemantic = args.includes("--semantic") || (await semanticEnabled());
 const useReal = args.includes("--real");
+const modelsArg = args.find((a) => a.startsWith("--models="))?.split("=")[1];
+const compareModels = useSemantic && modelsArg ? modelsArg.split(",").map((s) => s.trim()).filter(Boolean) : [];
+
+// declared budgets per size: a retrieval change ships only when it holds these
+// on the pinned corpus. Loose on purpose: CI machines vary more than laptops.
+const BUDGETS: Record<string, { indexKb: number; coldP95Ms: number; warmP95Ms: number; peakRssMb: number }> = {
+  small: { indexKb: 400, coldP95Ms: 4000, warmP95Ms: 1000, peakRssMb: 512 },
+  medium: { indexKb: 1500, coldP95Ms: 10000, warmP95Ms: 2500, peakRssMb: 1024 },
+  large: { indexKb: 6000, coldP95Ms: 30000, warmP95Ms: 8000, peakRssMb: 2048 },
+};
 
 // deterministic RNG
 function mulberry32(a: number) {
@@ -371,16 +389,28 @@ function percentiles(ms: number[]): { p50: number; p95: number } {
   return { p50: p(0.5), p95: p(0.95) };
 }
 
+interface PerTask {
+  id: string;
+  type: string;
+  query: string;
+  expectedFiles: string[];
+  topFiles: string[];
+  recall: number;
+  mrr: number;
+}
+
 async function runTasks(
   corpus: Corpus,
   b: BuildResult,
   hybrid: boolean,
   semantic: boolean,
-): Promise<{ byType: Map<string, { recall: number[]; mrr: number[] }>; lat: number[] }> {
+): Promise<{ byType: Map<string, { recall: number[]; mrr: number[] }>; lat: number[]; peakRssMb: number; perTask: PerTask[] }> {
   const bm25 = hybrid ? buildBm25Index(b.graph, b.docs) : undefined;
   const byType = new Map<string, { recall: number[]; mrr: number[] }>();
   const lat: number[] = [];
+  const perTask: PerTask[] = [];
   const rk = repoKey(b.root);
+  let peakRss = 0;
 
   for (const t of corpus.tasks) {
     const t0 = performance.now();
@@ -394,6 +424,7 @@ async function runTasks(
       }
     }
     lat.push(performance.now() - t0);
+    peakRss = Math.max(peakRss, process.memoryUsage().rss);
 
     const topFiles = [...new Set(hits.slice(0, t.topK).map((h) => h.symbol.file))];
     // multi-answer tasks (a fact planted in several files): any home in top-k
@@ -408,20 +439,40 @@ async function runTasks(
     st.recall.push(recall);
     st.mrr.push(rank ? 1 / rank : 0);
     byType.set(t.type, st);
+    perTask.push({ id: t.id, type: t.type, query: t.query, expectedFiles: t.expectedFiles, topFiles, recall, mrr: rank ? 1 / rank : 0 });
   }
-  return { byType, lat };
+  return { byType, lat, peakRssMb: peakRss / (1024 * 1024), perTask };
 }
 
-function report(name: string, r: Awaited<ReturnType<typeof runTasks>>, indexBytes: number, base?: Awaited<ReturnType<typeof runTasks>>) {
+function report(
+  name: string,
+  r: Awaited<ReturnType<typeof runTasks>>,
+  b: BuildResult,
+  indexBytes: number,
+  base?: Awaited<ReturnType<typeof runTasks>>,
+  budgetName = sizeName,
+) {
   console.log(`\n[${name}]`);
   const allR = [...r.byType.values()].flatMap((s) => s.recall);
   const allM = [...r.byType.values()].flatMap((s) => s.mrr);
   const mean = (a: number[]) => a.reduce((s, x) => s + x, 0) / (a.length || 1);
   const { p50, p95 } = percentiles(r.lat);
-  console.log(`  recall@k: ${(mean(allR) * 100).toFixed(1)}%   mrr: ${mean(allM).toFixed(3)}   latency p50 ${p50.toFixed(0)}ms p95 ${p95.toFixed(0)}ms   index ${(indexBytes / 1024).toFixed(1)}KB`);
+  console.log(`  recall@k: ${(mean(allR) * 100).toFixed(1)}%   mrr: ${mean(allM).toFixed(3)}   latency p50 ${p50.toFixed(0)}ms p95 ${p95.toFixed(0)}ms`);
+  console.log(`  resources: index ${(indexBytes / 1024).toFixed(1)}KB  peak rss ${r.peakRssMb.toFixed(0)}MB  cache ${(b.cacheBytes / 1024).toFixed(1)}KB  doc-conv ${b.docMs.toFixed(0)}ms`);
   for (const [type, st] of r.byType) {
     const miss = st.recall.filter((x) => x === 0).length;
     console.log(`    ${type.padEnd(13)} recall ${(mean(st.recall) * 100).toFixed(0).padStart(3)}%  mrr ${mean(st.mrr).toFixed(2).padStart(5)}  miss ${miss}/${st.recall.length}`);
+  }
+  const bd = BUDGETS[budgetName];
+  const over: string[] = [];
+  if (bd) {
+    // the ONNX runtime alone costs ~700MB resident; a semantic run cannot be
+    // held to the lexical lane's memory budget
+    const rssBudget = bd.peakRssMb + (useSemantic ? 800 : 0);
+    if (indexBytes > bd.indexKb * 1024) over.push(`index ${(indexBytes / 1024).toFixed(0)}KB > ${bd.indexKb}KB`);
+    if (p95 > bd.warmP95Ms) over.push(`p95 ${p95.toFixed(0)}ms > ${bd.warmP95Ms}ms`);
+    if (r.peakRssMb > rssBudget) over.push(`rss ${r.peakRssMb.toFixed(0)}MB > ${rssBudget}MB`);
+    if (over.length) console.log(`  WARN budget (${budgetName}): ${over.join(", ")}`);
   }
   // a hybrid must never rank worse than baseline on the same tasks
   if (base) {
@@ -430,8 +481,11 @@ function report(name: string, r: Awaited<ReturnType<typeof runTasks>>, indexByte
     for (const [type, st] of r.byType) {
       const bs = base.byType.get(type);
       if (!bs || !bs.recall.length) continue;
+      // an mrr comparison is noise when the base retrieves nothing
+      const baseRecall = baseMean(bs.recall);
+      if (baseRecall <= 0) continue;
       if (mean(st.mrr) < baseMean(bs.mrr) - 0.01) regress.push(`${type} mrr ${mean(st.mrr).toFixed(2)}<${baseMean(bs.mrr).toFixed(2)}`);
-      if (mean(st.recall) < baseMean(bs.recall) - 0.01) regress.push(`${type} recall ${(mean(st.recall) * 100).toFixed(0)}%<${(baseMean(bs.recall) * 100).toFixed(0)}%`);
+      if (mean(st.recall) < baseRecall - 0.01) regress.push(`${type} recall ${(mean(st.recall) * 100).toFixed(0)}%<${(baseRecall * 100).toFixed(0)}%`);
     }
     if (regress.length) console.log(`  WARN hybrid regressed vs baseline: ${regress.join("; ")}`);
   }
@@ -475,9 +529,68 @@ if (useReal) {
 const base = await runTasks(corpus, b, false, false);
 const bm25only = await runTasks(corpus, b, true, false);
 const hybrid = useSemantic ? await runTasks(corpus, b, true, true) : bm25only;
-report("baseline (graph+lexical)", base, 0);
-report("hybrid (+bm25)", bm25only, buildBm25Index(b.graph, b.docs).sizeBytes, base);
+report("baseline (graph+lexical)", base, b, 0);
+report("hybrid (+bm25)", bm25only, b, buildBm25Index(b.graph, b.docs).sizeBytes, base);
 // semantic must never rank worse than bm25-only on the same tasks: the
 // guard above only compares vs baseline, so a semantic displacement (a
 // correct bm25 doc hit pushed out by semantic noise) would go unnoticed
-if (useSemantic) report("hybrid (+bm25+semantic)", hybrid, 0, bm25only);
+if (useSemantic) report("hybrid (+bm25+semantic)", hybrid, b, 0, bm25only);
+
+// compare local models on the hard slices (paraphrase needles + cross-format
+// docs) before ever changing the default model
+const hardTypes = new Set(["needle", "needle-lexical", "cross-format", "doc-format"]);
+for (const model of compareModels) {
+  const prevModel = process.env.CONTEXT_MODEL;
+  process.env.CONTEXT_MODEL = model;
+  const m = await runTasks(corpus, b, true, true);
+  console.log(`\n[model ${model}]`);
+  for (const [type, st] of m.byType) {
+    if (!hardTypes.has(type)) continue;
+    const mean = (a: number[]) => a.reduce((s, x) => s + x, 0) / (a.length || 1);
+    console.log(`  ${type.padEnd(13)} recall ${(mean(st.recall) * 100).toFixed(0).padStart(3)}%  mrr ${mean(st.mrr).toFixed(2).padStart(5)}`);
+  }
+  if (prevModel === undefined) delete process.env.CONTEXT_MODEL;
+  else process.env.CONTEXT_MODEL = prevModel;
+}
+
+// ---- reproducibility artifacts: manifest, raw results, failure corpus ----
+
+interface VariantRecord {
+  name: string;
+  tasks: PerTask[];
+}
+
+const variantRecords: VariantRecord[] = [
+  { name: "baseline", tasks: base.perTask },
+  { name: "hybrid", tasks: bm25only.perTask },
+];
+if (useSemantic) variantRecords.push({ name: "semantic", tasks: hybrid.perTask });
+
+const manifest = {
+  seed,
+  size: sizeName,
+  modules: size,
+  real: useReal,
+  semantic: useSemantic,
+  cacheSchema: (await import("../src/cache")).CACHE_VERSION,
+  version: pkg.version,
+  env: { bun: process.version, platform: process.platform, arch: process.arch, date: new Date().toISOString() },
+  budgets: BUDGETS[sizeName],
+  corpus: { files: corpus.files.size, tasks: corpus.tasks.length, repos: useReal ? realRepos : [], docs: useReal ? realDocs : [] },
+  tasks: corpus.tasks.map((t) => ({ id: t.id, type: t.type, source: t.source, query: t.query, expectedFiles: t.expectedFiles, topK: t.topK, changed: t.changed ?? [] })),
+};
+await fs.mkdir(outDir, { recursive: true });
+await fs.writeFile(path.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
+await fs.writeFile(path.join(outDir, "results.json"), JSON.stringify(variantRecords, null, 2));
+const failures = variantRecords.flatMap((v) =>
+  v.tasks.filter((t) => t.recall === 0).map((t) => ({
+    variant: v.name,
+    id: t.id,
+    type: t.type,
+    query: t.query,
+    expectedFiles: t.expectedFiles,
+    topFiles: t.topFiles.slice(0, 5),
+  })),
+);
+await fs.writeFile(path.join(outDir, "failures.jsonl"), failures.map((f) => JSON.stringify(f)).join("\n") + (failures.length ? "\n" : ""));
+console.log(`\nbench: artifacts -> ${outDir} (manifest.json, results.json, failures.jsonl, ${failures.length} confirmed misses preserved)`);

@@ -36,7 +36,24 @@ export interface InitOptions {
   hooks: boolean; // also install hook adapters (explicit opt-in)
 }
 
-const SKILL_DIR = path.join(import.meta.dir, "..", "skill");
+// Compiled binaries bundle src/ into $bunfs; the real skill/ ships NEXT to the
+// binary in the release layout (context/dist/context + context/skill). Source
+// runs resolve it from the checkout. First real path wins.
+async function skillDir(): Promise<string> {
+  const exe = path.dirname(process.execPath);
+  const candidates = [
+    path.join(exe, "..", "skill"),
+    path.join(exe, "skill"),
+    path.join(import.meta.dir ?? "", "..", "skill"),
+  ];
+  for (const c of candidates) {
+    try {
+      await fs.access(path.join(c, "SKILL.md"));
+      return c;
+    } catch {}
+  }
+  return candidates[candidates.length - 1];
+}
 
 function resolveAgent(t: (typeof TARGETS)[number], opts: InitOptions): string {
   const base = opts.project ? opts.repo : homedir();
@@ -68,7 +85,7 @@ function validateOnly(only: string[]): void {
 /** Install the host-neutral context skill into each selected agent dir. */
 export async function init(opts: InitOptions): Promise<InitResult[]> {
   const out: InitResult[] = [];
-  const src = path.join(SKILL_DIR, "SKILL.md");
+  const src = path.join(await skillDir(), "SKILL.md");
   validateOnly(opts.only);
   const agents = opts.only.length ? TARGETS.filter((t) => opts.only.includes(t.name)) : TARGETS;
 

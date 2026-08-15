@@ -20,6 +20,7 @@ mkdir -p "$XDG_CACHE_HOME"
 repo="$smoke/repo"
 mkdir -p "$repo/src"
 cat > "$repo/src/store.ts" <<'EOF'
+// session persistence store: saves and loads session values
 export class Store {
   save(key: string, value: string): void {}
 }

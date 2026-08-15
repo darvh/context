@@ -6,20 +6,25 @@ import { terms, STOP_WORDS } from "./query";
 /**
  * Sparse lexical index over symbol records (name, signature, doc, path) plus
  * doc records (extracted non-code text). SQLite FTS5 + BM25. One row per
- * symbol / doc. In-memory, rebuilt per command (the symbol set is already
- * cached in the graph). Deterministic.
+ * symbol; long docs are indexed per SECTION (bounded units) so a 25KB file
+ * can't bury its answer. In-memory, rebuilt per command (the symbol set is
+ * already cached in the graph). Deterministic.
  */
 export interface Bm25Index {
   db: Database;
   rows: number;
   sizeBytes: number;
   symCount: number; // symbols occupy rowids [0, symCount)
+  /** rowid of the first section row of each doc */
+  docOffsets: number[];
 }
 
 export interface Bm25Hit {
   kind: "sym" | "doc";
-  rowid: number; // sym: index into graph.symbols; doc: index into docs
+  rowid: number; // sym: index into graph.symbols
   score: number; // lower = better (BM25)
+  doc?: number; // doc: index into docs
+  section?: number; // doc: index into that doc's sections
 }
 
 export function buildBm25Index(graph: Graph, docs: DocFact[] = []): Bm25Index {
@@ -33,11 +38,16 @@ export function buildBm25Index(graph: Graph, docs: DocFact[] = []): Bm25Index {
     insSym.run(i, s.name, s.sig, s.doc, s.file);
     sizeBytes += s.name.length + s.sig.length + s.doc.length + s.file.length;
   });
+  const docOffsets: number[] = [];
+  let rowid = graph.symbols.length;
   docs.forEach((d, i) => {
-    insDoc.run(i, d.text, d.file);
-    sizeBytes += d.text.length + d.file.length;
+    docOffsets.push(rowid);
+    for (const sec of d.sections.length ? d.sections : [{ text: d.text, line: 1 }]) {
+      insDoc.run(rowid++, sec.text, d.file);
+      sizeBytes += sec.text.length + d.file.length;
+    }
   });
-  return { db, rows: graph.symbols.length + docs.length, sizeBytes, symCount: graph.symbols.length };
+  return { db, rows: rowid, sizeBytes, symCount: graph.symbols.length, docOffsets };
 }
 
 /** FTS query string for a task — shared by search and the bench's hardness probe. */
@@ -60,7 +70,18 @@ export function bm25Search(idx: Bm25Index, task: string, limit = 20): Bm25Hit[] 
   const docRows = idx.db.prepare(
     `SELECT rowid, bm25(docs) AS s FROM docs WHERE docs MATCH ? ORDER BY s ASC LIMIT ?`,
   ).all(q, limit) as { rowid: number; s: number }[];
-  for (const r of docRows) out.push({ kind: "doc", rowid: r.rowid, score: r.s });
+  for (const r of docRows) {
+    // binary-search the doc whose section range contains this rowid
+    const offs = idx.docOffsets;
+    let lo = 0;
+    let hi = offs.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (offs[mid] <= r.rowid) lo = mid;
+      else hi = mid - 1;
+    }
+    out.push({ kind: "doc", rowid: r.rowid, score: r.s, doc: lo, section: r.rowid - offs[lo] });
+  }
   out.sort((a, b) => a.score - b.score);
   return out;
 }

@@ -61,8 +61,10 @@ export interface QueryInput {
   docs?: DocFact[];
 }
 
-/** Transient symbol for a doc file — never stored in the graph, only for capsule rendering. */
-export function docSymbol(d: DocFact): SymbolFact {
+/** Transient symbol for a doc file (or one of its sections) — never stored in
+ * the graph, only for capsule rendering. The line points at the section that
+ * matched so `context expand` lands on the answer region. */
+export function docSymbol(d: DocFact, line = 1): SymbolFact {
   const name = d.file.split("/").pop() ?? d.file;
   return {
     id: `doc::${d.file}`,
@@ -70,8 +72,8 @@ export function docSymbol(d: DocFact): SymbolFact {
     kind: "doc",
     name,
     sig: "",
-    span: { sl: 1, sc: 1, el: 1, ec: 1 },
-    nameLine: 1,
+    span: { sl: line, sc: 1, el: line, ec: 1 },
+    nameLine: line,
     exported: false,
     test: false,
     doc: d.text.slice(0, 200),
@@ -350,9 +352,10 @@ export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs }:
       const maxGraph = out[0]?.score ?? 0;
       const docHits = hits.filter((h) => h.kind === "doc");
       for (const hit of docHits) {
-        const d = (docs ?? [])[hit.rowid];
+        const d = (docs ?? [])[hit.doc ?? -1];
         if (!d) continue;
-        const sym = docSymbol(d);
+        const sec = d.sections[hit.section ?? 0];
+        const sym = docSymbol(d, sec?.line ?? 1);
         if (seen.has(sym.id)) continue;
         const coverage = [...docTermsFor(d)].filter((x) => tset.has(x)).length;
         const score = pinned || coverage <= maxCodeMatched ? 0 : Math.min(Math.max(-hit.score, coverage * 2), 10);

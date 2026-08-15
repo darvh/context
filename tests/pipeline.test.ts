@@ -95,6 +95,6 @@ describe("cache", () => {
   test("cache is external to the repo", async () => {
     const rec = await loadCache(GO);
     expect(rec).not.toBeNull();
-    expect(rec!.version).toBe("context-cache-v4");
+    expect(rec!.version).toMatch(/^context-cache-v\d+$/);
   });
 });

@@ -1,0 +1,189 @@
+{
+  "repos": [
+    {
+      "name": "mux",
+      "url": "https://github.com/gorilla/mux.git",
+      "revision": "db9d1d0073d27a0a2d9a8c1bc52aa0af4374d265",
+      "why": "gorilla/mux: small, dense HTTP router; real-world Go idioms"
+    },
+    {
+      "name": "express",
+      "url": "https://github.com/expressjs/express.git",
+      "revision": "a3714473feb3d2908add734d340e7755fd85e0a3",
+      "why": "express: widely used Node framework; single-file modules with heavy method dispatch"
+    },
+    {
+      "name": "flask",
+      "url": "https://github.com/pallets/flask.git",
+      "revision": "2a8a38b051fc248865730bf3511bf2e2ea325e81",
+      "why": "flask: real Python framework; split between src/flask and src/flask/sansio"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "real-mux-sym-newrouter",
+      "repo": "mux",
+      "query": "NewRouter",
+      "type": "symbol",
+      "topK": 3,
+      "expectedFiles": ["mux.go"],
+      "expectedSymbols": ["NewRouter"],
+      "changed": [],
+      "why": "exact exported symbol: the primary router constructor"
+    },
+    {
+      "id": "real-mux-path-regexp",
+      "repo": "mux",
+      "query": "fix the bug in regexp.go",
+      "type": "path",
+      "topK": 3,
+      "expectedFiles": ["regexp.go"],
+      "expectedSymbols": [],
+      "changed": [],
+      "why": "explicit file path named in the task"
+    },
+    {
+      "id": "real-mux-chg-middleware",
+      "repo": "mux",
+      "query": "the middleware chain was just edited, where do we look",
+      "type": "change",
+      "topK": 5,
+      "expectedFiles": ["middleware.go"],
+      "expectedSymbols": [],
+      "changed": ["middleware.go"],
+      "why": "recent-change signal on the middleware chain implementation"
+    },
+    {
+      "id": "real-mux-con-host",
+      "repo": "mux",
+      "query": "how do I match a route by the host header",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["route.go"],
+      "expectedSymbols": ["Host"],
+      "changed": [],
+      "why": "Route.Host registers host-based matching; route.go is the only home"
+    },
+    {
+      "id": "real-mux-con-routevars",
+      "repo": "mux",
+      "query": "how are path parameters extracted from the request",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["mux.go"],
+      "expectedSymbols": ["Vars"],
+      "changed": [],
+      "why": "Vars reads the request context that matchers fill"
+    },
+    {
+      "id": "real-express-sym-json",
+      "repo": "express",
+      "query": "express.json",
+      "type": "symbol",
+      "topK": 3,
+      "expectedFiles": ["lib/express.js"],
+      "expectedSymbols": ["json"],
+      "changed": [],
+      "why": "express.json is the exported body-parser binding"
+    },
+    {
+      "id": "real-express-path-response",
+      "repo": "express",
+      "query": "the response implementation in lib/response.js",
+      "type": "path",
+      "topK": 3,
+      "expectedFiles": ["lib/response.js"],
+      "expectedSymbols": [],
+      "changed": [],
+      "why": "explicit file path named in the task"
+    },
+    {
+      "id": "real-express-con-sendfile",
+      "repo": "express",
+      "query": "send a file download to the client",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["lib/response.js"],
+      "expectedSymbols": ["sendFile"],
+      "changed": [],
+      "why": "res.sendFile streams a file; response.js is its only home"
+    },
+    {
+      "id": "real-express-chg-application",
+      "repo": "express",
+      "query": "the application wiring was just edited, where do we look",
+      "type": "change",
+      "topK": 5,
+      "expectedFiles": ["lib/application.js"],
+      "expectedSymbols": [],
+      "changed": ["lib/application.js"],
+      "why": "recent-change signal on the app constructor module"
+    },
+    {
+      "id": "real-flask-sym-app",
+      "repo": "flask",
+      "query": "Flask",
+      "type": "symbol",
+      "topK": 3,
+      "expectedFiles": ["src/flask/app.py"],
+      "expectedSymbols": ["Flask"],
+      "changed": [],
+      "why": "the Flask application class, entry point of the framework"
+    },
+    {
+      "id": "real-flask-path-sessions",
+      "repo": "flask",
+      "query": "the session implementation in src/flask/sessions.py",
+      "type": "path",
+      "topK": 3,
+      "expectedFiles": ["src/flask/sessions.py"],
+      "expectedSymbols": [],
+      "changed": [],
+      "why": "explicit file path named in the task"
+    },
+    {
+      "id": "real-flask-con-cookies",
+      "repo": "flask",
+      "query": "how are session cookies signed and verified",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["src/flask/sessions.py"],
+      "expectedSymbols": ["SecureCookieSessionInterface"],
+      "changed": [],
+      "why": "SecureCookieSessionInterface signs/verifies the cookie; sessions.py is its only home"
+    },
+    {
+      "id": "real-flask-con-routes",
+      "repo": "flask",
+      "query": "how does the app map urls to view functions",
+      "type": "concept",
+      "topK": 5,
+      "expectedFiles": ["src/flask/sansio/app.py"],
+      "expectedSymbols": ["add_url_rule"],
+      "changed": [],
+      "why": "add_url_rule registers a URL-to-view mapping in the sansio app"
+    },
+    {
+      "id": "real-flask-chg-cli",
+      "repo": "flask",
+      "query": "the command line interface was just edited, where do we look",
+      "type": "change",
+      "topK": 5,
+      "expectedFiles": ["src/flask/cli.py"],
+      "expectedSymbols": [],
+      "changed": ["src/flask/cli.py"],
+      "why": "recent-change signal on the CLI entry module"
+    },
+    {
+      "id": "real-flask-doc-config",
+      "repo": "flask",
+      "query": "flask configuration values documentation",
+      "type": "cross-format",
+      "topK": 5,
+      "expectedFiles": ["docs/config.rst"],
+      "expectedSymbols": [],
+      "changed": [],
+      "why": "docs/config.rst is the prose home for configuration documentation"
+    }
+  ]
+}

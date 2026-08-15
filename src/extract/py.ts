@@ -50,7 +50,16 @@ export function extractPy(root: Node, ctx: Ctx) {
     return undefined;
   };
 
-  const handleDef = (n: Node, kind: "function" | "class") => {
+  // decorators wrap their target: a decorated function/class is a
+  // `decorated_definition` node containing the real definition. Without
+  // unwrapping, every @decorated symbol (flask's @setupmethod, routes) is
+  // silently dropped from the graph.
+  const unwrapDef = (n: Node): Node => {
+    if (n.type !== "decorated_definition") return n;
+    return n.namedChildren.find((c) => c.type === "function_definition" || c.type === "class_definition") ?? n;
+  };
+
+  const handleDef = (outer: Node, n: Node, kind: "function" | "class") => {
     const nm = nameField(n);
     const name = nm ? nm.text : "anon";
     const isTest = fileIsTest || (kind === "function" && name.startsWith(TEST_IDENTS.py.funcPrefix)) || (kind === "class" && name.startsWith(TEST_IDENTS.py.classPrefix));
@@ -70,15 +79,16 @@ export function extractPy(root: Node, ctx: Ctx) {
       // twice: once here, once by the main loop)
       const body = n.namedChildren.find((c) => c.type === "block");
       for (const c of body?.namedChildren ?? []) {
-        if (c.type !== "function_definition") continue;
-        const mnm = nameField(c);
+        const cm = unwrapDef(c);
+        if (cm.type !== "function_definition") continue;
+        const mnm = nameField(cm);
         const mname = mnm ? mnm.text : "m";
-        const m = addSym(ctx, c, "method", "exact", { test: mname.startsWith(TEST_IDENTS.py.funcPrefix) });
-        collectCalls(ctx, c, m.id);
-        ctx.edges.push({ from: s.id, to: m.id, name: mname, kind: "contain", conf: "exact", at: `${ctx.file}:${c.startPosition.row + 1}` });
+        const m = addSym(ctx, cm, "method", "exact", { test: mname.startsWith(TEST_IDENTS.py.funcPrefix) });
+        collectCalls(ctx, cm, m.id);
+        ctx.edges.push({ from: s.id, to: m.id, name: mname, kind: "contain", conf: "exact", at: `${ctx.file}:${cm.startPosition.row + 1}` });
       }
     }
-    handleDecorators(n, s.id);
+    handleDecorators(outer, s.id);
     if (isTest) collectTestUses(ctx, n, s.id);
   };
 
@@ -88,13 +98,18 @@ export function extractPy(root: Node, ctx: Ctx) {
   };
 
   for (const n of walk(root)) {
+    const inner = unwrapDef(n);
     switch (n.type) {
+      case "decorated_definition":
+        if (inClass(inner)) break;
+        handleDef(n, inner, inner.type === "class_definition" ? "class" : "function");
+        break;
       case "function_definition":
         if (inClass(n)) break;
-        handleDef(n, "function");
+        handleDef(n, n, "function");
         break;
       case "class_definition":
-        handleDef(n, "class");
+        handleDef(n, n, "class");
         break;
       case "import_statement":
       case "import_from_statement": {

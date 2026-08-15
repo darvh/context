@@ -1,12 +1,12 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { scan, type ScanOpts } from "./scan";
-import { mapLimit } from "./async";
+import { mapLimit, withTimeout } from "./async";
 import { langFor, rgLangFor } from "./lang";
 import { extractFile } from "./extract";
 import { resolveFacts } from "./resolve";
-import { loadCache, writeCache, repoKey, CACHE_VERSION } from "./cache";
-import { isDocFile, extractDoc, MAX_DOC_BYTES, type DocFact } from "./doc";
+import { loadCache, writeCache, repoKey, CACHE_VERSION, cachePathFor } from "./cache";
+import { isDocFile, extractDoc, sha256Hex, MAX_DOC_BYTES, type DocFact } from "./doc";
 import type { FileFacts, Graph } from "./facts";
 
 export interface BuildResult {
@@ -26,9 +26,13 @@ export interface BuildResult {
   refreshMs: number;
   totalMs: number;
   sourceCacheMiss: boolean;
+  docMs: number; // document extraction/conversion time
+  cacheBytes: number; // on-disk cache record size
 }
 
 const CONCURRENCY = 8;
+const PARSE_TIMEOUT_MS = 10_000;
+const DOC_TIMEOUT_MS = 30_000;
 
 export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResult> {
   const t0 = performance.now();
@@ -57,9 +61,10 @@ export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResu
       const rg = lang ? null : rgLangFor(f);
       const langName = lang?.name ?? rg ?? "rg";
       const source = await fs.readFile(path.join(s.tree, f), "utf8");
-      return extractFile(f, langName, source, manifest[f]);
+      // bounded parse: a slow file is skipped, never allowed to hang the command
+      return withTimeout(PARSE_TIMEOUT_MS, extractFile(f, langName, source, manifest[f]), null);
     });
-    for (const ff of results) fileFacts.set(ff.file, ff);
+    for (const ff of results) if (ff) fileFacts.set(ff.file, ff);
     parseMs = performance.now() - t1;
   }
 
@@ -68,18 +73,32 @@ export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResu
   const resolveMs = performance.now() - t2;
 
   // docs lane: non-code files -> extracted text for BM25/semantic indexing.
-  // Delta via (size, mtime): unchanged docs are reused, only edited ones re-extract.
+  // Reuse by CONTENT identity: (size, mtime) is only trusted when the content
+  // hash matches too, so same-size or timestamp-preserving edits cannot leave
+  // stale text. The manifest already hashes <=1MB files (free); larger docs
+  // are hashed on demand, bounded by MAX_DOC_BYTES.
+  const t3 = performance.now();
   const docs: DocFact[] = [];
   const cachedDocs = new Map((cached?.docs ?? []).map((d) => [d.file, d]));
   const docFiles = s.files.filter((f) => isDocFile(f));
   const freshDocs = await mapLimit(docFiles, CONCURRENCY, async (f) => {
     try {
-      const st = await fs.stat(path.join(s.tree, f));
+      const abs = path.join(s.tree, f);
+      const st = await fs.stat(abs);
       if (st.size > MAX_DOC_BYTES) return null;
       const prev = cachedDocs.get(f);
-      if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return prev;
-      const bytes = new Uint8Array(await fs.readFile(path.join(s.tree, f)));
-      const d = await extractDoc(f, bytes);
+      if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs) {
+        const known = manifest[f];
+        const hash = known ?? sha256Hex(new Uint8Array(await fs.readFile(abs)));
+        if (hash === prev.hash) return prev;
+      }
+      const bytes = new Uint8Array(await fs.readFile(abs));
+      // bounded conversion: a stuck converter yields an empty doc, never a hang
+      const d = await withTimeout(
+        DOC_TIMEOUT_MS,
+        extractDoc(f, bytes),
+        { file: f, text: "", sections: [], hash: sha256Hex(bytes), size: bytes.byteLength, mtimeMs: 0 },
+      );
       d.mtimeMs = st.mtimeMs;
       return d;
     } catch {
@@ -87,7 +106,9 @@ export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResu
     }
   });
   for (const d of freshDocs) if (d) docs.push(d);
+  const docMs = performance.now() - t3;
 
+  let cacheBytes = 0;
   try {
     await writeCache(s.tree, {
       version: CACHE_VERSION,
@@ -97,6 +118,7 @@ export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResu
       graph,
       docs,
     });
+    cacheBytes = (await fs.stat(cachePathFor(s.tree))).size;
   } catch {
     // cache unavailable is recoverable: discovery still returns a capsule
   }
@@ -118,5 +140,7 @@ export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResu
     refreshMs: parseMs + resolveMs,
     totalMs: performance.now() - t0,
     sourceCacheMiss: !cached,
+    docMs,
+    cacheBytes,
   };
 }
