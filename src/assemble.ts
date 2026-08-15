@@ -1,5 +1,5 @@
 import type { RankedHit } from "./query";
-import { meaningfulTerms } from "./query";
+import { meaningfulTerms, queryConfidence, type QueryConfidence } from "./query";
 import type { BuildResult } from "./build";
 import { estTokens } from "./tokens";
 import { serializedCost } from "./render";
@@ -27,6 +27,7 @@ export interface Capsule {
   budgetTokens: number;
   tokensUsed: number;
   truncated: boolean;
+  confidence: QueryConfidence;
   changed: string[]; // bounded working-tree context, separate from task relevance
   dirs: DirCard[]; // DirMap L0: top task-affine directories
   files: string[]; // orientation: relevant files
@@ -52,9 +53,12 @@ export interface AssembleOpts {
   /** semantic directory candidates from the weak-confidence lane; when
    *  present they lead the DirMap (fusion after the confidence gate) */
   semanticDirs?: SemanticDirHit[];
+  /** symbols ("file:line") already shown to the agent this session: session-
+   *  delta novelty, disposable per tree */
+  seen?: Set<string>;
 }
 
-export function assemble({ task, build, hits, budgetTokens, changed, semanticDirs }: AssembleOpts): Capsule {
+export function assemble({ task, build, hits, budgetTokens, changed, semanticDirs, seen }: AssembleOpts): Capsule {
   const t = meaningfulTerms(task);
   const hitTerms = hits.map((h) => new Set(meaningfulTerms(h.symbol.name + " " + h.symbol.sig)));
   const unresolvedTerms = t.filter((term) => {
@@ -102,6 +106,7 @@ export function assemble({ task, build, hits, budgetTokens, changed, semanticDir
     budgetTokens,
     tokensUsed: 0,
     truncated: false,
+    confidence: queryConfidence(hits),
     changed: [],
     dirs: [],
     files: [],
@@ -110,7 +115,7 @@ export function assemble({ task, build, hits, budgetTokens, changed, semanticDir
     unresolvedTerms: [],
     next: [],
   };
-  return packToBudget(capsule, budgetTokens, { capsHits, rankedDirs, dirAffinity, unresolvedTerms, changedList });
+  return packToBudget(capsule, budgetTokens, { capsHits, rankedDirs, dirAffinity, unresolvedTerms, changedList, seen });
 }
 
 interface Packable {
@@ -123,7 +128,7 @@ interface Packable {
 function packToBudget(
   c: Capsule,
   budget: number,
-  src: { capsHits: CapsuleHit[]; rankedDirs: DirCard[]; dirAffinity: Map<string, number>; unresolvedTerms: string[]; changedList: string[] },
+  src: { capsHits: CapsuleHit[]; rankedDirs: DirCard[]; dirAffinity: Map<string, number>; unresolvedTerms: string[]; changedList: string[]; seen?: Set<string> },
 ): Capsule {
   const hitCost = (h: CapsuleHit) => estTokens(`${h.handle} ${h.kind} ${h.name} ${h.file}:${h.line} ${h.sig} ${h.reason.join(",")}`);
   const dirCost = (d: DirCard) => estTokens(`${d.path} ${d.files} ${d.lang} ${d.surface.join(" ")}`);
@@ -147,7 +152,7 @@ function packToBudget(
     if (pinned(h)) continue;
     pick.push({
       kind: "hit",
-      utility: h.score * (CONF_FACTOR[h.conf] ?? 0.5) * (filesIn.has(h.file) ? NOVELTY_DUP : 1),
+      utility: h.score * (CONF_FACTOR[h.conf] ?? 0.5) * (filesIn.has(h.file) ? NOVELTY_DUP : 1) * (src.seen?.has(`${h.file}:${h.line}`) ? 0.15 : 1),
       cost: hitCost(h),
       add: () => addHit(h),
     });

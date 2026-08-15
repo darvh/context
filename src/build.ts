@@ -9,6 +9,7 @@ import { langFor, rgLangFor } from "./lang";
 import { buildDocLinks, type DocLink } from "./links";
 import { loadOverlay, mergeOverlay } from "./overlay";
 import { loadScipIndex } from "./scip";
+import { extractArtifacts } from "./artifacts";
 import { resolveFacts } from "./resolve";
 import { scan, type ScanOpts } from "./scan";
 
@@ -81,6 +82,9 @@ export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResu
   if (overlay) graph = mergeOverlay(graph, overlay);
   const scip = await loadScipIndex(s.tree);
   if (scip) graph = mergeOverlay(graph, scip);
+  // typed artifact facts: env vars + config keys as first-class config symbols
+  const artifacts = await extractArtifacts(s.tree, s.files);
+  if (artifacts.length) graph = { ...graph, symbols: [...graph.symbols, ...artifacts] };
   const resolveMs = performance.now() - t2;
 
   // docs lane: non-code files -> extracted text for BM25/semantic indexing.

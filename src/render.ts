@@ -10,6 +10,7 @@ export function renderCapsule(c: Capsule): string {
   if (c.gitHead) lines.push(`git_head: ${c.gitHead}`);
   lines.push(`working_tree: ${c.workingTree}`);
   lines.push(`budget: ${c.budgetTokens} tokens (used ~${c.tokensUsed}, estimated)`);
+  lines.push(`confidence: ${c.confidence}${c.confidence === "conflicted" ? " — several competing neighborhoods; treat as alternatives" : ""}`);
 
   if (c.changed.length) {
     lines.push(`\nchanged:`);

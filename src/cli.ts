@@ -5,8 +5,8 @@ import { assemble, type Capsule } from "./assemble";
 import { renderCapsule, capsuleToJson } from "./render";
 import { resolveExpand, renderExpanded } from "./expand";
 import { impact, renderImpact, type ImpactReport } from "./impact";
-import { changedFiles } from "./diff";
-import { lastCapsulePath, writeJson, repoKey } from "./cache";
+import { changedFiles, coChangedFiles } from "./diff";
+import { lastCapsulePath, writeJson, repoKey, readJson, sessionStatePath } from "./cache";
 import { buildBm25Index } from "./bm25";
 import { appendSemanticHits } from "./query";
 import { estTokens } from "./tokens";
@@ -75,7 +75,16 @@ async function cmdPrepare(args: Args) {
   const changed = await changedFiles(b.root);
   const explicit = explicitFilesFromTask(task, b.files);
   const bm25 = b.graph.symbols.length || b.docs.length ? buildBm25Index(b.graph, b.docs) : undefined;
-  let hits = rankSymbols({ task, graph: b.graph, changed, explicitFiles: explicit, bm25, docs: b.docs });
+  // history lane: co-change facts are git-only and only consulted when the
+  // task is explicitly about history/regression
+  const historyIntent = /\b(why did|when did|history|regression|introduced(?: by)?|co-?changed)\b/i.test(task);
+  const coChanged = historyIntent ? await coChangedFiles(b.root) : undefined;
+  let hits = rankSymbols({ task, graph: b.graph, changed, explicitFiles: explicit, bm25, docs: b.docs, coChanged });
+
+  // session-delta: symbols already shown to the agent in this task session are
+  // down-weighted (novelty); the disposable session state is keyed by tree
+  const session = await readJson<{ tree: string; seen: string[] }>(sessionStatePath(b.repoRoot));
+  const seen = session && session.tree === b.treeHash ? new Set(session.seen) : undefined;
 
   // pipeline: exact/lexical -> confidence gate -> semantic lane (opt-in).
   // The gate decides whether semantic candidates are consulted at all: a
@@ -101,9 +110,11 @@ async function cmdPrepare(args: Args) {
       }
     }
   }
-  const capsule = assemble({ task, build: b, hits, budgetTokens: args.budget, changed, semanticDirs });
+  const capsule = assemble({ task, build: b, hits, budgetTokens: args.budget, changed, semanticDirs, seen });
   try {
     await writeJson(lastCapsulePath(b.repoRoot), capsule);
+    // record what this observation showed, for the next one in this session
+    await writeJson(sessionStatePath(b.repoRoot), { tree: b.treeHash, seen: capsule.hits.map((h) => `${h.file}:${h.line}`) }).catch(() => {});
   } catch {
     // capsule write failure is recoverable: output still goes to stdout
   }
@@ -193,11 +204,26 @@ async function cmdFollow(args: Args) {
   const symbol = args.rest[0];
   const edge = args.rest[1] ?? "all";
   if (!symbol) {
-    console.error("usage: context follow <symbol|qualified-id> [edge]");
+    console.error("usage: context follow <symbol|qualified-id> [<symbol2>|edge]");
     process.exit(1);
   }
   const b = await build(args.root, args.scan);
-  const { follow, renderFollow, EDGE_KINDS } = await import("./follow");
+  const { follow, renderFollow, connectSeeds, renderConnections, EDGE_KINDS, resolveSymbol } = await import("./follow");
+  // two symbols: render the minimal connecting subgraph instead of trails
+  const second = args.rest[1];
+  if (second && !(EDGE_KINDS as readonly string[]).includes(second)) {
+    const a = resolveSymbol(b, symbol);
+    const c = resolveSymbol(b, second);
+    if (!a.sym || !c.sym) {
+      console.error("context: cannot resolve one of the two symbols");
+      process.exit(1);
+    }
+    const conns = connectSeeds(b, [a.sym.id, c.sym.id]);
+    const out = `connections between ${a.sym.name} and ${c.sym.name}:\n${renderConnections(conns)}\n`;
+    console.error("context:telemetry " + JSON.stringify({ cmd: "follow-connect", a: symbol, b: second, edges: conns.length, outputTokens: estTokens(out) }));
+    process.stdout.write(out);
+    return;
+  }
   if (edge !== "all" && !(EDGE_KINDS as readonly string[]).includes(edge)) {
     console.error(`context: unknown edge "${edge}" (known: ${EDGE_KINDS.join(", ")})`);
     process.exit(1);

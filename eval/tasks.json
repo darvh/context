@@ -430,6 +430,21 @@
       ],
       "changed": [],
       "why": "needle: zero-shared-term paraphrase on the Python store"
+    },
+    {
+      "id": "t-env-1",
+      "repo": "typescript",
+      "query": "PORT environment variable",
+      "type": "artifact",
+      "topK": 5,
+      "expectedFiles": [
+        "src/index.ts"
+      ],
+      "expectedSymbols": [
+        "PORT"
+      ],
+      "changed": [],
+      "why": "artifact lane: env vars are first-class config symbols"
     }
   ]
 }

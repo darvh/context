@@ -60,6 +60,9 @@ export interface QueryInput {
   bm25?: Bm25Index;
   /** non-code doc records (extracted text) surfaced alongside code hits */
   docs?: DocFact[];
+  /** git co-change pairs ("fileA\0fileB" -> commit count), only consulted for
+   *  explicit history/regression intent */
+  coChanged?: Map<string, number>;
 }
 
 /** Transient symbol for a doc file (or one of its sections) — never stored in
@@ -99,18 +102,25 @@ export function docSymbol(d: DocFact, line = 1): SymbolFact {
 const WEAK_BASE_SCORE = 5;
 const AUTHORITATIVE_REASONS = ["explicit-file", "recent-change"];
 
-export type QueryConfidence = "strong" | "weak" | "empty";
+export type QueryConfidence = "strong" | "weak" | "conflicted" | "empty";
 
 /** The confidence gate between the exact/lexical pass and the semantic lane.
  *  strong: a genuine lexical match or an authoritative signal pinned the
- *  answer — semantic adds nothing. weak: hits exist but no confident match.
- *  empty: nothing matched. The gate decides whether semantic candidates are
- *  consulted at all, so a good lexical pass never pays the embedding cost. */
+ *  answer — semantic adds nothing. conflicted: several hits compete near the
+ *  top across different directories — show alternatives instead of a single
+ *  claim. weak: hits exist but no confident match. empty: nothing matched.
+ *  The gate decides whether semantic candidates are consulted at all, so a
+ *  good lexical pass never pays the embedding cost. */
 export function queryConfidence(hits: RankedHit[]): QueryConfidence {
   if (!hits.length) return "empty";
   const maxBase = hits[0]?.score ?? 0;
   const authoritative = hits.some((h) => h.reason.some((r) => AUTHORITATIVE_REASONS.includes(r) || r === "exact-name"));
-  return maxBase >= WEAK_BASE_SCORE || authoritative ? "strong" : "weak";
+  if (maxBase >= WEAK_BASE_SCORE || authoritative) return "strong";
+  if (hits.length >= 2 && hits[1].score >= maxBase * 0.7) {
+    const dirs = new Set(hits.slice(0, 2).map((h) => h.symbol.file.split("/").slice(0, -1).join("/")));
+    if (dirs.size >= 2) return "conflicted";
+  }
+  return "weak";
 }
 
 // words that make a query explicitly about recent working-tree changes; when
@@ -270,10 +280,56 @@ const WEIGHT: Record<Edge["kind"], number> = {
 // generic test framework scaffolding: evidence, not targets
 const GENERIC_TEST = new Set(["it", "test", "describe", "expect", "beforeeach", "aftereach", "beforeall", "afterall"]);
 
-export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs }: QueryInput): RankedHit[] {
-  const t = meaningfulTerms(task);
+// negative constraints: explicit scope restrictions parsed from the task text.
+// Applied as penalties before propagation, so excluded scopes never seed.
+const NEG_TESTS = /(?:not|no|excluding|without|ignore)\s+(?:the\s+)?(?:unit\s+)?tests?/i;
+const NEG_PRODUCTION = /\bproduction\b/i;
+const NEG_LEGACY = /without\s+(?:the\s+)?legacy/i;
+const ONLY_CONFIG = /\bonly\s+(?:the\s+)?config/i;
+
+// explicit history intent: gates the git co-change lane (never affects
+// ordinary topical retrieval)
+const HISTORY_INTENT = /\b(why did|when did|history|regression|introduced(?: by)?|co-?changed)\b/i;
+
+// irregular morphology the porter stemmer misses ("kept" -> "keep"):
+// query terms are expanded with their base forms, so "values are lost when
+// it shuts down" can match a repo that says "lose". The vocabulary must
+// exist in the repo — this bridges forms, never inventing terms.
+const IRREGULAR_BASES: Record<string, string> = {
+  kept: "keep", lost: "lose", losing: "lose", wrote: "write", writing: "write",
+  ran: "run", running: "run", made: "make", making: "make", bought: "buy",
+  built: "build", sent: "send", sending: "send", got: "get", getting: "get",
+  found: "find", finding: "find", gave: "give", giving: "give", took: "take",
+  taking: "take", came: "come", coming: "come", went: "go", going: "go",
+  did: "do", doing: "do", had: "have", having: "have", was: "be", were: "be",
+  been: "be", met: "meet", meant: "mean", knew: "know",
+  knowing: "know", threw: "throw", thought: "think", taught: "teach",
+  caught: "catch", brought: "bring", fought: "fight", sought: "seek",
+  held: "hold", told: "tell", sold: "sell", spoke: "speak", broke: "break",
+  chose: "choose", drove: "drive", fell: "fall", felt: "feel", forgot: "forget",
+  grew: "grow", heard: "hear", hid: "hide", led: "lead",
+  left: "leave", lent: "lend", paid: "pay", read: "read", rode: "ride",
+  rang: "ring", rose: "rise", shook: "shake", shone: "shine", shot: "shoot",
+  shut: "shut", sang: "sing", sank: "sink", sat: "sit", slept: "sleep",
+  slid: "slide", spent: "spend", stood: "stand", stole: "steal", stuck: "stick",
+  struck: "strike", swore: "swear", swam: "swim", swung: "swing",
+  tore: "tear", wore: "wear", woke: "wake", won: "win", withdrew: "withdraw",
+};
+
+/** Expand a query term with its irregular base form when one exists. */
+export function expandIrregular(term: string): string[] {
+  const base = IRREGULAR_BASES[term];
+  return base && base !== term ? [term, base] : [term];
+}
+
+export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs, coChanged }: QueryInput): RankedHit[] {
+  // irregular-form expansion: "kept" also matches "keep" (the porter stemmer
+  // misses irregular past tense; the base form must exist in the repo)
+  const t = meaningfulTerms(task).flatMap(expandIrregular);
   const tset = new Set(t);
   const recentIntent = t.some((w) => RECENT_WORDS.has(w));
+  const historyIntent = HISTORY_INTENT.test(task);
+  const taskLower = task.toLowerCase();
   const byId = new Map(graph.symbols.map((s) => [s.id, s]));
   const inbound = new Map<string, Edge[]>();
   const outbound = new Map<string, Edge[]>();
@@ -320,6 +376,12 @@ export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs }:
       st.score += 4;
       addReason(s.id, "exact-name");
     }
+    // diagnostic-first: a task naming a test verbatim pins it (stack traces,
+    // failing-test reports, CI output) — stronger than a term match
+    if (s.test && s.name.length >= 6 && taskLower.includes(s.name.toLowerCase())) {
+      st.score += 6;
+      addReason(s.id, "test-name-pin");
+    }
     // path match
     const fileTerms = new Set(terms(s.file));
     let pathMatched = 0;
@@ -357,6 +419,41 @@ export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs }:
     if (s.test && GENERIC_TEST.has(s.name)) st.score *= 0.2;
     else if (s.name.length <= 2 && (s.kind === "const" || s.kind === "var" || s.kind === "test")) st.score *= 0.5;
     if (matched === 0 && s.name.length <= 4 && (s.kind === "const" || s.kind === "var" || s.test)) st.score *= 0.4;
+  }
+
+  // negative constraints: excluded scopes are penalized before propagation,
+  // so they never seed the graph
+  const negTests = NEG_TESTS.test(task) || NEG_PRODUCTION.test(task);
+  const negLegacy = NEG_LEGACY.test(task);
+  const onlyConfig = ONLY_CONFIG.test(task);
+  if (negTests || negLegacy || onlyConfig) {
+    for (const [id, st] of state) {
+      const s = byId.get(id);
+      if (!s) continue;
+      if (negTests && s.test) st.score *= 0.05;
+      if (negLegacy && /legacy/i.test(s.file)) st.score *= 0.2;
+      if (onlyConfig && s.kind !== "config") st.score *= 0.4;
+    }
+  }
+
+  // git co-change lane: only for explicit history/regression intent, and only
+  // from files that changed today to their historical co-changers
+  if (historyIntent && coChanged && coChanged.size) {
+    const boost = (f: string, count: number) => {
+      for (const s of graph.symbols) {
+        if (s.file !== f) continue;
+        const st = ensure(s.id);
+        st.score += Math.min(count, 5) * 0.6;
+        addReason(s.id, "co-change");
+      }
+    };
+    for (const [pair, count] of coChanged) {
+      const sep = pair.indexOf("\0");
+      const a = pair.slice(0, sep);
+      const b = pair.slice(sep + 1);
+      if (changed.has(a) && !changed.has(b)) boost(b, count);
+      else if (changed.has(b) && !changed.has(a)) boost(a, count);
+    }
   }
 
   // propagate relevance through edges, 2 hops; cap each symbol's added

@@ -164,3 +164,22 @@ describe("compiler facts overlay", () => {
     expect(await loadOverlay(path.join(import.meta.dir, "..", "spike", "fixtures", "go"))).toBeNull();
   });
 });
+
+describe("typed artifacts", () => {
+  test("env vars become first-class config symbols", async () => {
+    const { extractArtifacts } = await import("../src/artifacts");
+    const a = await extractArtifacts("spike/fixtures/typescript", ["src/index.ts"]);
+    const port = a.find((x) => x.name === "PORT");
+    expect(port).toBeDefined();
+    expect(port!.kind).toBe("config");
+    expect(port!.conf).toBe("exact");
+    expect(port!.doc).toContain("environment");
+  });
+
+  test("PORT resolves exactly in ranking", async () => {
+    const b = await buildGo();
+    const ts = await build("spike/fixtures/typescript");
+    const hits = rankSymbols({ task: "PORT environment variable", graph: ts.graph, changed: new Set(), explicitFiles: [], bm25: undefined, docs: [] });
+    expect(hits[0].symbol.name).toBe("PORT");
+  });
+});

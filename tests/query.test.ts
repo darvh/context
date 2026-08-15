@@ -149,3 +149,68 @@ describe("long-doc section indexing", () => {  const longDoc: DocFact = {
     expect(docHit!.reason).toContain("doc-match");
   });
 });
+
+describe("diagnostic and constraint lanes", () => {
+  const g: Graph = {
+    symbols: [
+      { id: "store.go::OpenStore::1", file: "store.go", kind: "function", name: "OpenStore", sig: "func OpenStore()", span: { sl: 1, sc: 1, el: 1, ec: 1 }, nameLine: 1, exported: true, test: false, doc: "", conf: "exact" },
+      { id: "store_test.go::TestOpenStore::1", file: "store_test.go", kind: "test", name: "TestOpenStore", sig: "func TestOpenStore()", span: { sl: 1, sc: 1, el: 1, ec: 1 }, nameLine: 1, exported: false, test: true, doc: "", conf: "exact" },
+      { id: "legacy.go::LegacyStore::1", file: "legacy.go", kind: "struct", name: "LegacyStore", sig: "type LegacyStore", span: { sl: 1, sc: 1, el: 1, ec: 1 }, nameLine: 1, exported: true, test: false, doc: "", conf: "exact" },
+      { id: "conf.ts::CONFIG_KEY::1", file: "conf.ts", kind: "config", name: "CONFIG_KEY", sig: `CONFIG_KEY = "k"`, span: { sl: 1, sc: 1, el: 1, ec: 1 }, nameLine: 1, exported: true, test: false, doc: "", conf: "exact" },
+    ],
+    edges: [],
+    imports: [],
+  };
+  const rank = (task: string) => rankSymbols({ task, graph: g, changed: new Set(), explicitFiles: [], bm25: undefined, docs: [] });
+
+  test("a task naming a failing test verbatim pins it (diagnostic-first)", () => {
+    const out = rank("TestOpenStore is failing in CI");
+    expect(out[0].symbol.name).toBe("TestOpenStore");
+    expect(out[0].reason).toContain("test-name-pin");
+  });
+
+  test("negative constraint: not tests excludes test symbols", () => {
+    const out = rank("production code, not tests");
+    const tests = out.filter((h) => h.symbol.test);
+    expect(tests).toHaveLength(0);
+  });
+
+  test("negative constraint: without legacy deprioritizes legacy files", () => {
+    const out = rank("store without the legacy adapter");
+    expect(out[0].symbol.file).not.toBe("legacy.go");
+  });
+
+  test("co-change lane only fires on history intent", () => {
+    const coChanged = new Map([["store.go store_test.go", 4]]);
+    const changed = new Set(["store.go"]);
+    const out = rankSymbols({ task: "why did the store change recently", graph: g, changed, explicitFiles: [], bm25: undefined, docs: [], coChanged });
+    const test = out.find((h) => h.symbol.name === "TestOpenStore");
+    expect(test?.reason).toContain("co-change");
+    const out2 = rankSymbols({ task: "find the store", graph: g, changed, explicitFiles: [], bm25: undefined, docs: [], coChanged });
+    expect(out2.some((h) => h.reason.includes("co-change"))).toBe(false);
+  });
+
+  test("conflicted confidence when two directories compete near the top", async () => {
+    const { queryConfidence } = await import("../src/query");
+    const out = rank("store config");
+    expect(["strong", "weak", "conflicted", "empty"]).toContain(queryConfidence(out));
+  });
+});
+
+describe("irregular morphology + artifacts", () => {
+  test("kept expands to keep for matching", async () => {
+    const { expandIrregular } = await import("../src/query");
+    expect(expandIrregular("kept")).toEqual(["kept", "keep"]);
+    expect(expandIrregular("store")).toEqual(["store"]);
+  });
+
+  test("irregular forms bridge past-tense queries", () => {
+    const g: Graph = {
+      symbols: [{ id: "keep.ts::keepAlive::1", file: "keep.ts", kind: "function", name: "keepAlive", sig: "function keepAlive()", span: { sl: 1, sc: 1, el: 1, ec: 1 }, nameLine: 1, exported: true, test: false, doc: "", conf: "exact" }],
+      edges: [],
+      imports: [],
+    };
+    const out = rankSymbols({ task: "kept alive after restart", graph: g, changed: new Set(), explicitFiles: [], bm25: undefined, docs: [] });
+    expect(out[0].symbol.name).toBe("keepAlive");
+  });
+});

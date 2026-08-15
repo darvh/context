@@ -116,6 +116,19 @@ latency, and clean-environment smoke behavior on a real host.
   contract. Tree-sitter extraction is Context's own index; SCIP is a precision
   upgrade on repos that already have it. A hint command could be added later,
   nothing more.
+- **Full typed artifact graph.** The env-var + config-key slice shipped
+  (`src/artifacts.ts`: `process.env.X`, `os.Getenv`, `ENV[...]`,
+  `config.get("key")` patterns become first-class config symbols — pinned by
+  `t-env-1`, verified live: "PORT environment variable" resolves exactly).
+  Tables/migrations/schemas/CLI-flag extraction is still parked: biggest
+  machinery, lowest immediate agent value; routes/config kinds already exist.
+- **Semantic-free vocabulary expansion beyond irregular morphology.** The
+  irregular-form table (`kept`→`keep`, `lost`→`lose`, ...) shipped in
+  `query.ts` — the only deterministic bridge the porter stemmer misses.
+  Full synonym/expansion tables are rejected: expansion can only map to terms
+  that exist in the repo, and the corpus's zero-vocabulary needle
+  (`t-needle-1`) proves the ceiling (its repo has no English semantics at
+  all — verified).
 - **Vector DB / GraphRAG / more fusion knobs / LLM summaries / autonomous
   retrieval loops** — rejected per the hypothesis experiments.
 

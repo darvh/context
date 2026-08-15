@@ -51,6 +51,12 @@ export function hookStatePath(root: string): string {
   return path.join(cacheDir(), `hook-state-${repoKey(root)}.json`);
 }
 
+/** Per-repo disposable session state (what the agent already saw), keyed by
+ *  tree hash so a changed tree starts a fresh session. */
+export function sessionStatePath(root: string): string {
+  return path.join(cacheDir(), `session-${repoKey(root)}.json`);
+}
+
 /**
  * Atomic write with a unique temp filename. Concurrent runs never clobber each
  * other's temp file; rename is atomic so readers see whole content or none.

@@ -38,7 +38,7 @@ function symbolAt(id: string, byId: Map<string, SymbolFact>): SymbolFact {
 }
 
 /** Resolve a bare name or qualified id to a symbol; ambiguous names yield candidates. */
-function resolveSymbol(b: BuildResult, name: string): { sym?: SymbolFact; ambiguous?: boolean; candidates?: { id: string; file: string; line: number }[] } {
+export function resolveSymbol(b: BuildResult, name: string): { sym?: SymbolFact; ambiguous?: boolean; candidates?: { id: string; file: string; line: number }[] } {
   const byId = new Map(b.graph.symbols.map((s) => [s.id, s]));
   const byName = new Map<string, SymbolFact[]>();
   for (const s of b.graph.symbols) byName.set(s.name, [...(byName.get(s.name) ?? []), s]);
@@ -50,18 +50,24 @@ function resolveSymbol(b: BuildResult, name: string): { sym?: SymbolFact; ambigu
   return { sym: cands[0] };
 }
 
+/** Directed adjacency (resolved edges only), shared by follow and connectSeeds. */
+function adjacency(b: BuildResult, edgeKinds?: Set<string>): { outbound: Map<string, Edge[]>; inbound: Map<string, Edge[]> } {
+  const outbound = new Map<string, Edge[]>();
+  const inbound = new Map<string, Edge[]>();
+  for (const e of b.graph.edges) {
+    if (!e.to) continue;
+    if (edgeKinds && !edgeKinds.has(e.kind)) continue;
+    outbound.set(e.from, [...(outbound.get(e.from) ?? []), e]);
+    inbound.set(e.to, [...(inbound.get(e.to) ?? []), e]);
+  }
+  return { outbound, inbound };
+}
+
 export function follow(b: BuildResult, name: string, edge: string, depth = MAX_DEPTH): FollowResult {
   const byId = new Map(b.graph.symbols.map((s) => [s.id, s]));
   const kind = edge === "all" || edge === "" ? "all" : (edge as Edge["kind"]);
   const edgeKinds = kind === "all" ? new Set<string>(EDGE_KINDS) : new Set([kind]);
-
-  const outbound = new Map<string, Edge[]>();
-  const inbound = new Map<string, Edge[]>();
-  for (const e of b.graph.edges) {
-    if (!e.to || !edgeKinds.has(e.kind)) continue;
-    outbound.set(e.from, [...(outbound.get(e.from) ?? []), e]);
-    inbound.set(e.to, [...(inbound.get(e.to) ?? []), e]);
-  }
+  const { outbound, inbound } = adjacency(b, edgeKinds);
 
   const resolved = resolveSymbol(b, name);
   if (!resolved.sym) {
@@ -134,4 +140,60 @@ export function renderFollow(r: FollowResult): string {
   }
   if (r.truncated) lines.push(`  (trail list truncated at ${MAX_TRAILS} — follow deeper with a qualified id)`);
   return lines.join("\n");
+}
+
+/** Minimal connecting subgraph: given seed symbol ids, the smallest bounded
+ *  graph that connects them (multi-source BFS; union of shortest paths, ≤
+ *  depth 3, ≤ 12 edges). Emits only the relationships needed to explain how
+ *  the seeds relate — the idea-checker's "connect the seeds" primitive. */
+export function connectSeeds(b: BuildResult, ids: string[], depth = 3, maxEdges = 12): { a: string; b: string; kind: Edge["kind"] }[] {
+  const byId = new Map(b.graph.symbols.map((s) => [s.id, s]));
+  const seeds = [...new Set(ids.filter((id) => byId.has(id)))];
+  if (seeds.length < 2) return [];
+  const { outbound, inbound } = adjacency(b);
+
+  const edges = new Map<string, { a: string; b: string; kind: Edge["kind"] }>();
+  const addEdge = (e: Edge) => {
+    const key = e.from < e.to ? `${e.from}|${e.to}` : `${e.to}|${e.from}`;
+    if (!edges.has(key)) {
+      edges.set(key, { a: e.from, b: e.to, kind: e.kind });
+      if (edges.size >= maxEdges) return false;
+    }
+    return true;
+  };
+
+  // multi-source BFS from every seed; the first time a frontier meets the
+  // visited set of another seed, record the connecting path
+  const visited = new Map<string, number>(); // id -> seed index
+  let frontier: { id: string; fromSeed: number }[] = [];
+  seeds.forEach((id, i) => {
+    visited.set(id, i);
+    frontier.push({ id, fromSeed: i });
+  });
+  for (let d = 0; d < depth && frontier.length; d++) {
+    const next: typeof frontier = [];
+    for (const f of frontier) {
+      for (const e of [...(outbound.get(f.id) ?? []), ...(inbound.get(f.id) ?? [])]) {
+        const nid = e.from === f.id ? e.to : e.from;
+        const prev = visited.get(nid);
+        if (prev === f.fromSeed) continue; // same seed's own frontier
+        if (prev !== undefined) {
+          // frontiers met: this edge connects two seeds' regions
+          if (!addEdge(e)) return [...edges.values()];
+          continue;
+        }
+        visited.set(nid, f.fromSeed);
+        next.push({ id: nid, fromSeed: f.fromSeed });
+      }
+      if (edges.size >= maxEdges) return [...edges.values()];
+    }
+    frontier = next;
+  }
+  return [...edges.values()];
+}
+
+export function renderConnections(conns: { a: string; b: string; kind: Edge["kind"] }[]): string {
+  if (!conns.length) return "  (seeds are not connected within depth 3)";
+  const name = (id: string) => id.split("::")[1] ?? id;
+  return conns.map((c) => `  ${name(c.a)} --${c.kind}--> ${name(c.b)}`).join("\n");
 }
