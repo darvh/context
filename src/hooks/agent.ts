@@ -8,6 +8,8 @@ export interface AgentResponseInput {
   text: string;
   /** optional host-provided provider usage; raw, already multiplied if provider reports it */
   usage?: { input: number; output: number; total: number };
+  /** codex always sends hook_event_name; claude-code does not — schema switch */
+  hook_event_name?: string;
 }
 
 export interface AgentResponseOut {
@@ -22,9 +24,15 @@ export interface AgentResponseOut {
  * and emits a Graft-style "tokens saved" line. Fail-open — never blocks the
  * agent. All numbers labeled `estimated`; provider usage, when present, is
  * passed through as raw counts.
+ *
+ * Host schemas differ: Claude Code Stop expects the AgentResponseOut shape;
+ * Codex Stop expects the common output fields (systemMessage is surfaced as a
+ * warning in the Codex UI — the user-visible channel for the savings line).
+ * Detection: Codex always sends hook_event_name; Claude Code does not.
  */
 export async function runAgentHook(input: AgentResponseInput, opts: { exit?: boolean } = {}): Promise<AgentResponseOut> {
   const exit = opts.exit ?? true;
+  const isCodex = (input as { hook_event_name?: string }).hook_event_name === "Stop";
   const out: AgentResponseOut = { outputTokens: estTokens(input.text), savings: null };
   try {
     // resolve repo like the user hook does, so per-repo state is scoped correctly
@@ -40,7 +48,12 @@ export async function runAgentHook(input: AgentResponseInput, opts: { exit?: boo
     }
   } catch {}
   if (exit) {
-    process.stdout.write(JSON.stringify(out));
+    if (isCodex) {
+      // Codex common output fields: systemMessage surfaces as a UI warning
+      process.stdout.write(JSON.stringify({ systemMessage: out.projection ?? "context: no savings projection for this turn" }));
+    } else {
+      process.stdout.write(JSON.stringify(out));
+    }
     process.exit(0);
   }
   return out;

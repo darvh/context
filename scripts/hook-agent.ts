@@ -17,4 +17,5 @@ await runAgentHook({
     output: Number(usage.output ?? 0),
     total: Number(usage.total ?? 0),
   },
+  hook_event_name: typeof input.hook_event_name === "string" ? input.hook_event_name : undefined,
 });

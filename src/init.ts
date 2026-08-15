@@ -214,9 +214,8 @@ expand with: context expand \${c.hits?.[0]?.handle ?? ""}\`);
       await fs.writeFile(pluginPath, plugin);
       out.push({ agent: t.name, what: "hooks-config", dir: pluginPath, status: "installed" });
     } else if (t.name === "codex") {
-      // codex supports Stop/PreToolUse/PostToolUse events via ~/.codex/hooks.json
-      // (same shape as claude settings hooks). No prompt-injection event exists,
-      // so the agent hook (savings telemetry) is what wires here.
+      // codex supports UserPromptSubmit (prompt injection, same shape as
+      // claude) and Stop (common output fields) via ~/.codex/hooks.json.
       const hooksPath = opts.project ? path.join(opts.repo, ".codex", "hooks.json") : path.join(homedir(), ".codex", "hooks.json");
       const dir = path.dirname(hooksPath);
       if (!opts.project && !opts.create && !(await exists(dir))) {
@@ -229,18 +228,20 @@ expand with: context expand \${c.hits?.[0]?.handle ?? ""}\`);
         cfg = JSON.parse(await fs.readFile(hooksPath, "utf8"));
       } catch {}
       const hooks = cfg.hooks ?? {};
-      if (hooks.Stop) {
-        out.push({ agent: t.name, what: "hooks-config", dir: hooksPath, status: "conflict", note: "existing Stop hooks; use --force to overwrite" });
+      if (hooks.UserPromptSubmit || hooks.Stop) {
+        out.push({ agent: t.name, what: "hooks-config", dir: hooksPath, status: "conflict", note: "existing hooks; use --force to overwrite" });
         if (!opts.force || opts.dryRun) continue;
       }
       if (opts.dryRun) {
         out.push({ agent: t.name, what: "hooks-config", dir: hooksPath, status: "updated", note: "dry-run" });
         continue;
       }
-      hooks.Stop = [{ hooks: [{ type: "command", command: agentHook, timeout: 5000 }] }];
+      hooks.UserPromptSubmit = [{ hooks: [{ type: "command", command: userHook, timeout: 30 }] }];
+      hooks.Stop = [{ hooks: [{ type: "command", command: agentHook, timeout: 5 }] }];
       cfg.hooks = hooks;
       await fs.writeFile(hooksPath, JSON.stringify(cfg, null, 2) + "\n");
       out.push({ agent: t.name, what: "hooks-config", dir: hooksPath, status: "updated" });
+      out.push({ agent: t.name, what: "hook-user", dir: userHook, status: "installed" });
       out.push({ agent: t.name, what: "hook-agent", dir: agentHook, status: "installed" });
     } else {
       out.push({ agent: t.name, what: "hooks-config", dir: "", status: "unselected", note: "hook wiring not shipped for this host yet" });
