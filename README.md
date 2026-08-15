@@ -163,7 +163,7 @@ Wiring is per-host, matching what each agent actually supports:
 
 There is no Stop/agent hook: Claude Code does not render Stop output, and the session token savings already live in the statusline, so the per-turn line was removed.
 
-Savings projection (`src/savings.ts`) estimates the input tokens the capsule replaces — the whole files its hits point at, capped (≤4 files, ≤4KB each, ≤12KB total) minus capsule tokens, labeled `estimated` everywhere. The runtime decision (Bun over Rust) is recorded in `spike/README.md`; the retrieval baseline lives in `eval/`. Retrieval results on pinned real revisions are reproducible via `bun run eval -- real`; agent-task (end-to-end) usefulness measurement is the next step, not yet claimed.
+Savings projection (`src/savings.ts`) estimates the input tokens the capsule replaces — the whole files its hits point at, capped (≤4 files, ≤4KB each, ≤12KB total) minus capsule tokens, labeled `estimated` everywhere. The runtime decision (Bun over Rust) is recorded in the commit history; the retrieval baseline lives in `eval/`. Retrieval results on pinned real revisions are reproducible via `bun run eval -- real`; agent-task (end-to-end) usefulness measurement is the next step, not yet claimed.
 
 See `skill/SKILL.md` for the host-neutral agent skill.
 

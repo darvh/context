@@ -12,7 +12,7 @@ export function grammarDir(): string {
   const env = process.env.CONTEXT_GRAMMAR_DIR;
   if (env && env.trim()) return env.endsWith('/') ? env : env + '/';
   if ((Bun as unknown as { isStandaloneExecutable?: boolean }).isStandaloneExecutable === true) {
-    // embedded via `bun build --compile --asset ./spike/grammars`
+    // embedded via `bun build --compile --asset ./grammars`
     return path.join(import.meta.dir, 'grammars') + '/';
   }
   try {

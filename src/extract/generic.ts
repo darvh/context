@@ -5,7 +5,7 @@ import { addSym, childField, refEdge, walk, classifyFile, promoteKinds, addCallE
 // Generic tree-sitter extractor for languages without a bespoke walker
 // (java, ruby, rust, c, cpp, c#, php, bash). One walker covers the shared
 // declaration/call/import node shapes; node type names verified against the
-// bundled grammars (see spike/probe). rg remains the fallback for parse
+// bundled grammars from grammars/ (see scripts/build/embed-grammars.ts). rg remains the fallback for parse
 // failures and languages with no usable wasm (swift, kotlin, scala, ...).
 
 const FUNCTION_NODES = new Set([

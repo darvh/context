@@ -10,16 +10,16 @@
   "scripts": {
     "start": "bun run src/cli.ts",
     "install:local": "bash install.sh --local",
-    "eval": "bun run scripts/eval.ts",
-    "bench": "bun run scripts/bench.ts",
-    "fixture": "bun run scripts/gen-fixture.ts",
-    "grammars": "bun run scripts/embed-grammars.ts",
+    "eval": "bun run eval/eval.ts",
+    "bench": "bun run eval/bench.ts",
+    "fixture": "bun run eval/gen-fixture.ts",
+    "grammars": "bun run scripts/build/embed-grammars.ts",
     "dup": "npx jscpd src scripts eval",
     "unused": "npx knip",
-    "build": "bun run scripts/vendor-onnx.ts && bun run scripts/embed-grammars.ts && mkdir -p dist && bun run scripts/package.ts && bun build --compile --asset ./spike/grammars --asset ./skill src/cli.ts --outfile dist/context && bash scripts/sign.sh dist/context",
+    "build": "bun run scripts/build/vendor-onnx.ts && bun run scripts/build/embed-grammars.ts && mkdir -p dist && bun run scripts/build/package.ts && bun build --compile --asset ./grammars --asset ./skill src/cli.ts --outfile dist/context && bash scripts/build/sign.sh dist/context",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "postinstall": "bun run scripts/vendor-onnx.ts"
+    "postinstall": "bun run scripts/build/vendor-onnx.ts"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.14.0",

@@ -168,7 +168,7 @@ describe("compiler facts overlay", () => {
 describe("typed artifacts", () => {
   test("env vars become first-class config symbols", async () => {
     const { extractArtifacts } = await import("../src/artifacts");
-    const a = await extractArtifacts("spike/fixtures/typescript", ["src/index.ts"]);
+    const a = await extractArtifacts("tests/fixtures/typescript", ["src/index.ts"]);
     const port = a.find((x) => x.name === "PORT");
     expect(port).toBeDefined();
     expect(port!.kind).toBe("config");
@@ -178,7 +178,7 @@ describe("typed artifacts", () => {
 
   test("PORT resolves exactly in ranking", async () => {
     const b = await buildGo();
-    const ts = await build("spike/fixtures/typescript");
+    const ts = await build("tests/fixtures/typescript");
     const hits = rankSymbols({ task: "PORT environment variable", graph: ts.graph, changed: new Set(), explicitFiles: [], bm25: undefined, docs: [] });
     expect(hits[0].symbol.name).toBe("PORT");
   });

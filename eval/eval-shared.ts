@@ -8,7 +8,7 @@ import { cachePathFor } from "../src/cache";
  *  scripts/bench.ts (variant idea checker) so both measure the same corpus. */
 
 const ROOT = path.join(import.meta.dir, "..");
-const FIXTURES = path.join(ROOT, "spike", "fixtures");
+const FIXTURES = path.join(ROOT, "tests", "fixtures");
 const REAL_OUT = path.join(ROOT, "var", "real-eval");
 
 export interface Task {

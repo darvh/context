@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 
 const root = path.join(import.meta.dir, "..");
-const dest = path.join(root, "spike", "grammars");
+const dest = path.join(root, "grammars");
 const pkgs: Record<string, string[]> = {
   "tree-sitter-go": ["tree-sitter-go.wasm"],
   "tree-sitter-python": ["tree-sitter-python.wasm"],
