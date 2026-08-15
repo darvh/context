@@ -53,6 +53,7 @@ async function skillDir(): Promise<string> {
     path.join(import.meta.dir ?? "", "skill"), // embedded (standalone)
     path.join(exe, "..", "skill"),
     path.join(exe, "skill"),
+    path.join(import.meta.dir ?? "", "..", "..", "skill"),
     path.join(import.meta.dir ?? "", "..", "skill"),
   ];
   for (const c of candidates) {
@@ -68,9 +69,9 @@ async function skillDir(): Promise<string> {
 async function scriptsDir(): Promise<string> {
   const exe = path.dirname(process.execPath);
   const candidates = [
-    path.join(import.meta.dir ?? "", "..", "scripts"),
-    path.join(exe, "..", "scripts"),
-    path.join(exe, "scripts"),
+    path.join(import.meta.dir ?? "", "..", "..", "scripts", "hooks"),
+    path.join(exe, "..", "scripts", "hooks"),
+    path.join(exe, "scripts", "hooks"),
   ];
   for (const c of candidates) {
     try {
@@ -392,11 +393,12 @@ const INSTRUCTIONS_FILES: Record<string, { home: string; project: string }> = {
 const INSTRUCTION_START = "<!-- context:start -->";
 const INSTRUCTION_END = "<!-- context:end -->";
 
-// One line, ~40 tokens: the always-in-context nudge. Full command reference
+// One line, ~50 tokens: the always-in-context nudge. Full command reference
 // lives in the skill (loaded on demand) and the SessionStart hook text.
 const INSTRUCTION_LINE =
-  "[context] Before non-trivial multi-file work, run `context observe \"<task>\"` once — task-relevant dirs/files/symbols with exact file:line " +
-  "(`context map`/`follow`/`impact`/`expand` drill-down; one call answers most tasks; skip for one-file edits). Navigation only — read the source for evidence.";
+  "[context] MANDATORY before grepping, globbing, or reading files to understand this repo: run `context observe \"<task>\"` once — task-relevant " +
+  "dirs/files/symbols with exact file:line (`context map`/`follow`/`impact`/`expand` drill-down; one call answers most tasks; skip for one-file edits). " +
+  "Searching first, observing after, is the anti-pattern. Navigation only — read the source for evidence.";
 const INSTRUCTION_BLOCK = `${INSTRUCTION_START}\n${INSTRUCTION_LINE}\n${INSTRUCTION_END}`;
 
 /** Marker-block upsert: replace our block in place, never touch foreign text. */

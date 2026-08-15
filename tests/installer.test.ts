@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 
 const REPO = path.join(import.meta.dir, "..");
 const INSTALL = path.join(REPO, "install.sh");
-const MK_LAUNCHER = path.join(REPO, "scripts", "mk-launcher.sh");
+const MK_LAUNCHER = path.join(REPO, "scripts", "build", "mk-launcher.sh");
 
 // project dirs must live OUTSIDE any git repo, or findRoot() resolves them to
 // the enclosing repository and init installs there instead of the temp project
@@ -102,7 +102,7 @@ describe("--targets validation", () => {
   test("unknown agent name fails with a clear error", async () => {
     const proj = projDir();
     await fs.mkdir(proj, { recursive: true });
-    const { code, err } = await run(["bun", "run", "src/cli.ts", "init", "--project", "--root", proj, "--targets", "bogus"], REPO);
+    const { code, err } = await run(["bun", "run", "src/cli/cli.ts", "init", "--project", "--root", proj, "--targets", "bogus"], REPO);
     expect(code).toBe(1);
     expect(err).toContain("unknown --targets: bogus");
     await fs.rm(proj, { recursive: true, force: true });
@@ -111,7 +111,7 @@ describe("--targets validation", () => {
   test("known target passes", async () => {
     const proj = projDir();
     await fs.mkdir(proj, { recursive: true });
-    const { code } = await run(["bun", "run", "src/cli.ts", "init", "--project", "--root", proj, "--targets", "opencode"], REPO);
+    const { code } = await run(["bun", "run", "src/cli/cli.ts", "init", "--project", "--root", proj, "--targets", "opencode"], REPO);
     expect(code).toBe(0);
     await fs.rm(proj, { recursive: true, force: true });
   });

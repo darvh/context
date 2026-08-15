@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { findRoot } from "./scan";
-import { readHookState, type HookState } from "./hooks/state";
+import { findRoot } from "../scan";
+import { readHookState, type HookState } from "./state";
 
 const C = {
   indigo: (s: string) => `\x1b[38;2;84;111;255m${s}\x1b[0m`,

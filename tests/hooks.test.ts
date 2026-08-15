@@ -5,7 +5,7 @@ import { promises as fs } from "node:fs";
 import { runHook } from "../src/hooks/user";
 import { runEditHook, blastRadius, editedFilePath } from "../src/hooks/edit";
 import { sessionOrientation } from "../src/hooks/session";
-import { renderStatusline } from "../src/statusline";
+import { renderStatusline } from "../src/hooks/statusline";
 import { readHookState } from "../src/hooks/state";
 import { writeJson, readJson, lastCapsulePath, repoKey, cachePathFor, writeCache, loadCache, CACHE_VERSION, hookStatePath } from "../src/cache";
 import type { CacheRecord } from "../src/cache";

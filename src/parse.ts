@@ -26,7 +26,7 @@ let initP: Promise<void> | null = null;
 
 // web-tree-sitter 0.25 needs its base runtime wasm at init time. Dev mode
 // reads it from node_modules; the packaged binary finds it next to the
-// language grammars (copied by scripts/embed-grammars.ts). We pass the bytes
+// language grammars (copied by scripts/build/embed-grammars.ts). We pass the bytes
 // directly (`wasmBinary`) because bun's bundler rewrites the default
 // `new URL("tree-sitter.wasm", import.meta.url)` fetch into a missing $bunfs
 // path inside compiled binaries.

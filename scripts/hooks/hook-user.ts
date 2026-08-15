@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { runHook } from "../src/hooks/user";
+import { runHook } from "../../src/hooks/user";
 
 const raw = await Bun.stdin.text();
 let input: Record<string, unknown> = {};

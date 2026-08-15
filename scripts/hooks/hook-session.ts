@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { sessionOrientation } from "../src/hooks/session";
+import { sessionOrientation } from "../../src/hooks/session";
 
 const raw = await Bun.stdin.text();
 let input: Record<string, unknown> = {};

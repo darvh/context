@@ -68,7 +68,7 @@ acquire_source() {
 
 # Self-testing launcher: try the compiled binary; if the host cannot execute it
 # (wrong arch, missing loader, killed), fall back to the Bun source entrypoint.
-# Shared template lives in scripts/mk-launcher.sh so the installer and its tests
+# Shared template lives in scripts/build/mk-launcher.sh so the installer and its tests
 # use one source of truth.
 write_launcher() {
   local root="$1"
@@ -105,7 +105,7 @@ install_from_source() {
   if [[ -x "$install_root/dist/context" ]]; then
     "$install_root/dist/context" init "${init_args[@]}"
   else
-    bun run "$runtime_root/src/cli.ts" init "${init_args[@]}"
+    bun run "$runtime_root/src/cli/cli.ts" init "${init_args[@]}"
   fi
 }
 

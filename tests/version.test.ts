@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildInfo, runtimeKind } from "../src/version";
+import { buildInfo, runtimeKind } from "../src/cli/version";
 import { CACHE_VERSION } from "../src/cache";
 
 describe("build identity", () => {

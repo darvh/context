@@ -7,8 +7,8 @@ import path from "node:path";
  * fixture cannot: many files (parse cost), long multi-section documents
  * (section indexing), and one dense file (adversarial parse cost).
  *
- *   bun run scripts/gen-fixture.ts                 # small -> var/large-fixture
- *   bun run scripts/gen-fixture.ts --size medium|large --seed 7 --out DIR
+ *   bun run eval/gen-fixture.ts                 # small -> var/large-fixture
+ *   bun run eval/gen-fixture.ts --size medium|large --seed 7 --out DIR
  *
  * Output layout:
  *   <out>/code/<mod>.{go,ts,py}   20+15+12 symbols per module

@@ -1,7 +1,7 @@
 {
   "ignore": [
-    "scripts/hook-*.ts",
-    "scripts/statusline.ts",
+    "scripts/hooks/hook-*.ts",
+    "scripts/hooks/statusline.ts",
     "spike/fixtures/**"
   ],
   "ignoreDependencies": [

@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
-import { writeJson } from "./cache";
+import { writeJson } from "../cache";
 
 /**
  * User-level configuration (~/.config/context/config.json, honors XDG_CONFIG_HOME).

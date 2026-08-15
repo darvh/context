@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { runEditHook } from "../src/hooks/edit";
+import { runEditHook } from "../../src/hooks/edit";
 
 const raw = await Bun.stdin.text();
 let input: Record<string, unknown> = {};

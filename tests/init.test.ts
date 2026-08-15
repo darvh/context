@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { init } from "../src/init";
+import { init } from "../src/cli/init";
 
 describe("context init", () => {
   test("installs the skill into project scope, idempotently", async () => {

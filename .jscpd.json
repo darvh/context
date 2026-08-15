@@ -7,6 +7,6 @@
     "var/**",
     "dist/**",
     "tests/**",
-    "scripts/hook-*.ts"
+    "scripts/hooks/hook-*.ts"
   ]
 }

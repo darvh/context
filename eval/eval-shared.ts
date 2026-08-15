@@ -4,8 +4,8 @@ import { build } from "../src/build";
 import { cachePathFor } from "../src/cache";
 
 /** Shared eval corpus machinery: task shape, pinned-corpus loading, and
- *  real-repo cloning. Used by scripts/eval.ts (regression gate) and
- *  scripts/bench.ts (variant idea checker) so both measure the same corpus. */
+ *  real-repo cloning. Used by eval/eval.ts (regression gate) and
+ *  eval/bench.ts (variant idea checker) so both measure the same corpus. */
 
 const ROOT = path.join(import.meta.dir, "..");
 const FIXTURES = path.join(ROOT, "tests", "fixtures");
