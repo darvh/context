@@ -44,7 +44,7 @@ ver="$("$cmd" --version)"
 pass "--version -> $ver"
 
 # 2. prepare works and surfaces the store
-"$cmd" prepare "session persistence" --root "$repo" | grep -q "store.ts" || fail "prepare output lacks store.ts"
+"$cmd" observe "session persistence" --root "$repo" | grep -q "store.ts" || fail "prepare output lacks store.ts"
 pass "prepare produces a capsule"
 
 # 3. init into a fresh project (project scope, no agent dirs created at HOME)
@@ -57,13 +57,13 @@ pass "init installs the skill"
 # 4. fail-open cache: cache dir cannot be created -> prepare still exits 0
 blocker="$smoke/blocker"
 echo not-a-dir > "$blocker"
-XDG_CACHE_HOME="$blocker" "$cmd" prepare "session persistence" --root "$repo" >/dev/null || fail "unwritable cache killed prepare"
+XDG_CACHE_HOME="$blocker" "$cmd" observe "session persistence" --root "$repo" >/dev/null || fail "unwritable cache killed prepare"
 pass "unwritable cache is fail-open"
 
 # 5. concurrent writers never corrupt the cache record
-"$cmd" prepare "openStore" --root "$repo" >/dev/null &
+"$cmd" observe "openStore" --root "$repo" >/dev/null &
 p1=$!
-"$cmd" prepare "Store save" --root "$repo" >/dev/null &
+"$cmd" observe "Store save" --root "$repo" >/dev/null &
 p2=$!
 wait "$p1" || fail "concurrent prepare #1 failed"
 wait "$p2" || fail "concurrent prepare #2 failed"
@@ -74,9 +74,9 @@ pass "concurrent prepares leave a valid cache record"
 
 # 6. semantic runtime boundary: compiled runtime degrades loudly, source runs
 if [[ "$ver" == *"runtime compiled"* ]]; then
-  err="$(CONTEXT_SEMANTIC=1 "$cmd" prepare "where does the app remember values" --root "$repo" 2>&1 >/dev/null)"
+  err="$(CONTEXT_SEMANTIC=1 "$cmd" observe "where does the app remember values" --root "$repo" 2>&1 >/dev/null)"
   [[ "$err" == *"compiled runtime"* ]] || fail "compiled runtime did not explain semantic unavailability: $err"
-  CONTEXT_SEMANTIC=1 "$cmd" prepare "where does the app remember values" --root "$repo" >/dev/null || fail "semantic request crashed compiled runtime"
+  CONTEXT_SEMANTIC=1 "$cmd" observe "where does the app remember values" --root "$repo" >/dev/null || fail "semantic request crashed compiled runtime"
   pass "compiled runtime degrades loudly, stays fail-open"
 else
   pass "source runtime: semantic boundary exercised by unit tests"

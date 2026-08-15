@@ -35,7 +35,7 @@ usage:
 (host adapters, spawned by hooks / the statusline — not for direct use):
   context hook-user|hook-edit|hook-session|statusline
 
-observe (alias: prepare) is orientation: DirMap + neighborhoods + spans.
+observe is orientation: DirMap + neighborhoods + spans.
 map compiles a bounded local RepoMap over one directory. follow walks one edge
 kind from a symbol (call, import, inherit, implement, ref, contain, test, all)
 with short trails; caller/callee analysis is impact's job. impact is the
