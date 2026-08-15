@@ -4,15 +4,19 @@ import { homedir } from "node:os";
 
 // Agent compatibility matrix — mirrors proof's rule table. Directories follow
 // each agent's documented skill convention; copilot and antigravity use the
-// Agent Skills open standard location (~/.agents/skills).
+// Agent Skills open standard location (~/.agents/skills). `probe`/`bin` are
+// the presence heuristics installer mode uses: install only for agents that
+// actually exist on the machine, never invent agent dirs (the shared
+// ~/.agents home makes dir presence alone ambiguous, so each agent also
+// probes its own config dir).
 const TARGETS = [
-  { name: "opencode", home: "~/.config/opencode/skills", project: ".opencode/skills" },
-  { name: "claude-code", home: "~/.claude/skills", project: ".claude/skills" },
-  { name: "codex", home: "~/.codex/skills", project: ".codex/skills" },
-  { name: "cursor", home: "~/.cursor/skills", project: ".cursor/skills" },
-  { name: "copilot", home: "~/.agents/skills", project: ".agents/skills" },
-  { name: "antigravity", home: "~/.agents/skills", project: ".agents/skills" },
-  { name: "pi", home: "~/.agents/skills", project: ".agents/skills" },
+  { name: "opencode", home: "~/.config/opencode/skills", project: ".opencode/skills", probe: [".config/opencode"], bin: "opencode" },
+  { name: "claude-code", home: "~/.claude/skills", project: ".claude/skills", probe: [".claude"], bin: "claude" },
+  { name: "codex", home: "~/.codex/skills", project: ".codex/skills", probe: [".codex"], bin: "codex" },
+  { name: "cursor", home: "~/.cursor/skills", project: ".cursor/skills", probe: [".cursor"], bin: "cursor" },
+  { name: "copilot", home: "~/.agents/skills", project: ".agents/skills", probe: [".config/github-copilot", ".vscode"], bin: "copilot" },
+  { name: "antigravity", home: "~/.agents/skills", project: ".agents/skills", probe: [".antigravity"], bin: "antigravity" },
+  { name: "pi", home: "~/.agents/skills", project: ".agents/skills", probe: [".pi"], bin: "pi" },
 ];
 
 type Status = "installed" | "up-to-date" | "updated" | "conflict" | "agent-miss" | "unselected" | "error" | "unchanged" | "skipped-unparseable" | "created";
@@ -147,7 +151,7 @@ export async function init(opts: InitOptions): Promise<InitResult[]> {
 
   for (const t of agents) {
     const dir = resolveAgent(t, opts);
-    if (!opts.project && !opts.create && !(await exists(dir))) {
+    if (!opts.project && !(opts.create ? await agentPresent(t) : await exists(dir))) {
       out.push({ agent: t.name, what: "skill", dir, status: "agent-miss" });
       continue; // absent home-scope agent dir: report, never create silently
     }
@@ -258,6 +262,10 @@ async function installHooks(opts: InitOptions): Promise<InitResult[]> {
 
   for (const t of TARGETS) {
     if (opts.only.length && !opts.only.includes(t.name)) continue;
+    if (opts.create && !(await agentPresent(t))) {
+      out.push({ agent: t.name, what: "hooks-config", dir: "", status: "agent-miss", note: "agent not installed" });
+      continue;
+    }
     if (t.name === "claude-code") {
       const settingsPath = opts.project
         ? path.join(opts.repo, ".claude", "settings.json")
@@ -377,17 +385,18 @@ expand with: context expand \${c.hits?.[0]?.handle ?? ""}\`);
 //
 // Only for hosts WITHOUT a session-start hook (claude-code + codex inject
 // the same directive from SessionStart, so a static line would be pure
-// duplication). Each host's global instructions file, mirroring
-// resolveAgent's home dirs: opencode reads AGENTS.md under
-// ~/.config/opencode, antigravity/copilot/pi under the ~/.agents standard
-// home, cursor under ~/.cursor. Project scope: every non-claude agent reads
-// the repo-root AGENTS.md (one shared file, one marker block).
-const INSTRUCTIONS_FILES: Record<string, { home: string; project: string }> = {
+// duplication). Home scope exists ONLY where the host natively reads a global
+// instructions file: opencode reads ~/.config/opencode/AGENTS.md (falls back
+// to ~/.claude/CLAUDE.md when absent). cursor/copilot/antigravity/pi read
+// AGENTS.md at the repo root only (cursor documents project + subdirectory
+// AGENTS.md; its global rules are UI-managed), so they get project scope and
+// no home file — a global write would be a native no-op.
+const INSTRUCTIONS_FILES: Record<string, { home?: string; project: string }> = {
   opencode: { home: "AGENTS.md", project: "AGENTS.md" },
-  antigravity: { home: "AGENTS.md", project: "AGENTS.md" },
-  pi: { home: "AGENTS.md", project: "AGENTS.md" },
-  cursor: { home: "AGENTS.md", project: "AGENTS.md" },
-  copilot: { home: "AGENTS.md", project: "AGENTS.md" },
+  antigravity: { project: "AGENTS.md" },
+  pi: { project: "AGENTS.md" },
+  cursor: { project: "AGENTS.md" },
+  copilot: { project: "AGENTS.md" },
 };
 
 const INSTRUCTION_START = "<!-- context:start -->";
@@ -420,21 +429,32 @@ async function installInstructions(opts: InitOptions): Promise<InitResult[]> {
     if (!rel) continue;
     const file = opts.project
       ? path.join(opts.repo, rel.project)
-      : path.join(path.dirname(resolveAgent(t, opts)), rel.home);
+      : rel.home
+        ? path.join(path.dirname(resolveAgent(t, opts)), rel.home)
+        : "";
+    if (!file) continue;
     const homeDir = path.dirname(file);
-    if (!opts.project && !opts.create && !(await exists(homeDir))) {
+    if (!opts.project && !(opts.create ? await agentPresent(t) : await exists(homeDir))) {
       out.push({ agent: t.name, what: "instructions", dir: file, status: "agent-miss" });
       continue;
     }
-    const before = await fs.readFile(file, "utf8").catch(() => "");
+    const existed = await exists(file);
+    let before = existed ? await fs.readFile(file, "utf8").catch(() => "") : "";
+    // AGENTS.md shadows CLAUDE.md (opencode: the fallback only applies when
+    // AGENTS.md is absent), so a fresh file seeds from the existing CLAUDE.md
+    // instead of silently dropping those instructions.
+    if (before === "") {
+      const claudeMd = opts.project ? path.join(opts.repo, "CLAUDE.md") : path.join(homedir(), ".claude", "CLAUDE.md");
+      before = await fs.readFile(claudeMd, "utf8").catch(() => "");
+    }
     const next = applyInstructionBlock(before);
     let status: Status;
     if (next === before) status = "unchanged";
-    else if (opts.dryRun) status = before ? "updated" : "created";
+    else if (opts.dryRun) status = existed ? "updated" : "created";
     else {
       await fs.mkdir(path.dirname(file), { recursive: true });
       await fs.writeFile(file, next);
-      status = before ? "updated" : "created";
+      status = existed ? "updated" : "created";
     }
     out.push({ agent: t.name, what: "instructions", dir: file, status, note: opts.dryRun ? "dry-run" : undefined });
   }
@@ -464,4 +484,15 @@ async function exists(p: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Presence probe for installer mode (--create): a known home config dir or
+ *  a PATH binary. Never counts the shared ~/.agents skills home — that dir is
+ *  created by this installer, not by the agent. */
+async function agentPresent(t: (typeof TARGETS)[number]): Promise<boolean> {
+  if (t.bin && (await Bun.which(t.bin))) return true;
+  for (const d of t.probe ?? []) {
+    if (await exists(path.join(homedir(), d))) return true;
+  }
+  return false;
 }

@@ -48,7 +48,7 @@ Forward installer options after `--`, for example:
 bun run install:local -- --targets pi --force
 ```
 
-`context init` installs the host-neutral skill into each agent's skill directory (same matrix as proof: opencode, claude-code, codex, cursor, copilot, antigravity, pi), user or project scope. Idempotent: identical copies are `up-to-date`, conflicts are skipped unless `--force`, absent home-scope agent dirs are reported and never created silently. `--hooks` additionally wires the UserPromptSubmit + agent-response hook adapters (claude-code settings today) — explicit opt-in, never silent.
+`context init` installs the host-neutral skill into each agent's skill directory (same matrix as proof: opencode, claude-code, codex, cursor, copilot, antigravity, pi), user or project scope. Idempotent: identical copies are `up-to-date`, conflicts are skipped unless `--force`. Manual init reports absent home-scope agent dirs as `agent-miss` and never creates silently; the installer probes each agent's config dir / PATH binary and only targets agents that are actually installed. `--hooks` additionally wires the UserPromptSubmit + agent-response hook adapters (claude-code settings today) — explicit opt-in, never silent. The one-line steering instruction installs into each hook-less host's instructions file: home scope only where the host natively reads a global file (opencode's `~/.config/opencode/AGENTS.md`, seeded from `~/.claude/CLAUDE.md` when created so existing instructions are never shadowed), project scope as the shared repo-root `AGENTS.md` (one marker block).
 
 ## Releases
 

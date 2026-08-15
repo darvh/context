@@ -136,8 +136,25 @@ describe("context init", () => {
     await fs.rm(repo, { recursive: true, force: true });
   });
 
-  test("instructions: --no-instructions opt-out and dry-run", async () => {
-    const repo = path.join(import.meta.dir, "..", "var", "init-inst-" + Date.now());
+  test("instructions: fresh AGENTS.md seeds from existing CLAUDE.md (no shadow loss)", async () => {
+    const repo = path.join(import.meta.dir, "..", "var", "init-seed-" + Date.now());
+    await fs.mkdir(repo, { recursive: true });
+    await fs.writeFile(path.join(repo, "CLAUDE.md"), "@RTK.md\n");
+    const r = await init({ project: true, repo, force: false, dryRun: false, only: ["opencode"], hooks: false });
+    expect(r.find((x) => x.what === "instructions")?.status).toBe("created");
+    const agentsMd = await fs.readFile(path.join(repo, "AGENTS.md"), "utf8");
+    expect(agentsMd.startsWith("@RTK.md\n")).toBe(true);
+    expect(agentsMd).toContain("<!-- context:start -->");
+    // idempotent on rerun; existing file content never re-seeded
+    await fs.writeFile(path.join(repo, "AGENTS.md"), agentsMd + "my rules\n");
+    const r2 = await init({ project: true, repo, force: false, dryRun: false, only: ["opencode"], hooks: false });
+    expect(r2.find((x) => x.what === "instructions")?.status).toBe("unchanged");
+    const rerun = await fs.readFile(path.join(repo, "AGENTS.md"), "utf8");
+    expect(rerun).toBe(agentsMd + "my rules\n");
+    await fs.rm(repo, { recursive: true, force: true });
+  });
+
+  test("instructions: --no-instructions opt-out and dry-run", async () => {    const repo = path.join(import.meta.dir, "..", "var", "init-inst-" + Date.now());
     await fs.mkdir(repo, { recursive: true });
     const r = await init({ project: true, repo, force: false, dryRun: true, only: ["opencode"], hooks: false });
     expect(r.find((x) => x.what === "instructions")?.status).toBe("created");
