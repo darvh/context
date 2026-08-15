@@ -29,7 +29,7 @@ import type { RankedHit } from "../src/query";
  *   bun run bench -- --json out.json   # raw per-task rows
  */
 
-import { cloneReal, loadFixtureTasks, loadRealTasks, FIXTURES, type Task } from "./eval-shared";
+import { buildTaskDirs, loadAllTasks, type Task } from "./eval-shared";
 
 const BUDGET = 1200;
 const args = process.argv.slice(2);
@@ -52,19 +52,10 @@ interface VariantResult {
   rows: TaskRow[];
 }
 
-const fixtureTasks = await loadFixtureTasks();
-let allTasks = fixtureTasks;
-if (useReal) {
-  allTasks = [...(await loadRealTasks()), ...fixtureTasks];
-}
+const allTasks = await loadAllTasks(useReal);
 
 // clone pinned real repos (same mechanism as eval)
-const taskDirs = new Map<string, string>();
-for (const t of allTasks) taskDirs.set(t.repo, path.join(FIXTURES, t.repo));
-if (useReal) {
-  const cloned = await cloneReal(new Set(allTasks.map((t) => t.repo)));
-  for (const [name, dir] of cloned) taskDirs.set(name, dir);
-}
+const taskDirs = await buildTaskDirs(allTasks, useReal);
 
 async function runVariant(name: string, task: Task, buildCache: Map<string, Awaited<ReturnType<typeof build>>>): Promise<{ row: TaskRow; hits: RankedHit[]; capsule: ReturnType<typeof assemble> }> {
   const dir = taskDirs.get(task.repo)!;

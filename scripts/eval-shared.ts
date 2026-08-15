@@ -5,9 +5,9 @@ import path from "node:path";
  *  real-repo cloning. Used by scripts/eval.ts (regression gate) and
  *  scripts/bench.ts (variant idea checker) so both measure the same corpus. */
 
-export const ROOT = path.join(import.meta.dir, "..");
-export const FIXTURES = path.join(ROOT, "spike", "fixtures");
-export const REAL_OUT = path.join(ROOT, "var", "real-eval");
+const ROOT = path.join(import.meta.dir, "..");
+const FIXTURES = path.join(ROOT, "spike", "fixtures");
+const REAL_OUT = path.join(ROOT, "var", "real-eval");
 
 export interface Task {
   id: string;
@@ -24,27 +24,48 @@ export interface Task {
   fixture?: boolean;
 }
 
-export async function loadFixtureTasks(): Promise<Task[]> {
+async function loadFixtureTasks(): Promise<Task[]> {
   const raw = await fs.readFile(path.join(ROOT, "eval", "tasks.json"), "utf8");
   const j = JSON.parse(raw) as { tasks: Task[] };
   return j.tasks.map((t) => ({ ...t, fixture: true, why: t.why ?? "fixture task: regression gate on a known-shape repository" }));
 }
 
-export async function loadRealTasks(): Promise<Task[]> {
+async function loadRealTasks(): Promise<Task[]> {
   const raw = await fs.readFile(path.join(ROOT, "eval", "real-tasks.json"), "utf8");
   const j = JSON.parse(raw) as { tasks: Task[]; repos: { name: string; url: string; revision: string }[] };
   return j.tasks;
 }
 
-export async function loadRealRepos(): Promise<{ name: string; url: string; revision: string }[]> {
+async function loadRealRepos(): Promise<{ name: string; url: string; revision: string }[]> {
   const raw = await fs.readFile(path.join(ROOT, "eval", "real-tasks.json"), "utf8");
   const j = JSON.parse(raw) as { repos: { name: string; url: string; revision: string }[] };
   return j.repos;
 }
 
+export async function loadAllTasks(useReal: boolean): Promise<Task[]> {
+  const fixtures = await loadFixtureTasks();
+  if (!useReal) return fixtures;
+  return [...(await loadRealTasks()), ...fixtures];
+}
+
+/** Resolve each task's corpus dir (fixture or cloned real repo), cloning
+ *  pinned real repos on demand. */
+export async function buildTaskDirs(allTasks: Task[], useReal: boolean): Promise<Map<string, string>> {
+  const taskDirs = new Map<string, string>();
+  for (const t of allTasks) {
+    const src = t.fixture ? path.join(FIXTURES, t.repo) : path.join(REAL_OUT, t.repo);
+    taskDirs.set(t.repo, src);
+  }
+  if (useReal) {
+    const cloned = await cloneReal(new Set(allTasks.map((t) => t.repo)));
+    for (const [name, dir] of cloned) taskDirs.set(name, dir);
+  }
+  return taskDirs;
+}
+
 /** Clone pinned real repos into var/real-eval at fixed revisions (idempotent:
  *  reuses an existing clone whose HEAD matches). */
-export async function cloneReal(needed: Set<string>): Promise<Map<string, string>> {
+async function cloneReal(needed: Set<string>): Promise<Map<string, string>> {
   const repos = await loadRealRepos();
   const taskDirs = new Map<string, string>();
   for (const r of repos) {

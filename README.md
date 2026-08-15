@@ -96,6 +96,8 @@ bun run fixture        # generate the deterministic large-repo fixture (small)
 bun run eval           # retrieval eval -> fixture subset (CI, no network)
 bun run eval -- real   # + pinned real repos (clones at fixed revisions)
 bun run bench          # variant idea checker: flat / DirMap / RepoMap / trails
+bun run dup            # jscpd duplication check (src + eval scripts)
+bun run unused         # knip unused-code check
 bun run build          # standalone binary -> ./dist/context
 bash scripts/smoke.sh ./dist/context   # clean-environment smoke suite
 ```

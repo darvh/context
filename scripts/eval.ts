@@ -28,7 +28,7 @@ import type { RankedHit } from "../src/query";
  *   bun run eval -- --json out.json   # raw per-task results
  */
 
-import { cloneReal, loadFixtureTasks, loadRealTasks, FIXTURES, REAL_OUT, type Task } from "./eval-shared";
+import { buildTaskDirs, loadAllTasks, type Task } from "./eval-shared";
 
 const BUDGET_TOKENS = 1200;
 
@@ -199,22 +199,8 @@ function perTask(variants: VariantResult[]) {
   }
 }
 
-const fixtureTasks: Task[] = await loadFixtureTasks();
-
-let allTasks = fixtureTasks;
-if (useReal) {
-  allTasks = [...(await loadRealTasks()), ...fixtureTasks];
-}
-
-const taskDirs = new Map<string, string>();
-for (const t of allTasks) {
-  const src = t.fixture ? path.join(FIXTURES, t.repo) : path.join(REAL_OUT, t.repo);
-  taskDirs.set(t.repo, src);
-}
-if (useReal) {
-  const cloned = await cloneReal(new Set(allTasks.map((t) => t.repo)));
-  for (const [name, dir] of cloned) taskDirs.set(name, dir);
-}
+const allTasks = await loadAllTasks(useReal);
+const taskDirs = await buildTaskDirs(allTasks, useReal);
 
 const variants: VariantResult[] = [];
 const base = await runVariant("baseline (graph+lexical)", allTasks, taskDirs, false, false);
