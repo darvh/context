@@ -13,9 +13,14 @@ ranking.
 ## Commands
 
 ```text
-context prepare "<task>" [--budget N] [--json] [--root DIR]
-context expand <handle|file:line>
-context impact <symbol|--diff> [--json]
+context observe "<task>" [--budget N] [--json] [--root DIR]
+               [--ignore pat[,pat]] [--no-gitignore]
+context find "<query>" [--budget N] [--json] [--root DIR]
+context map <directory|symbol> [--root DIR]
+context follow <symbol|qualified-id> [<edge>] [--root DIR]
+context expand <handle|file:line> [--root DIR]
+context impact <symbol|qualified-id|--diff> [--json] [--root DIR]
+               [--ignore pat[,pat]] [--no-gitignore]
 context init [--targets all|opencode,claude-code,codex,cursor,copilot,antigravity,pi]
              [--project] [--force] [--dry-run] [--hooks]
 context config get [key]
@@ -23,6 +28,14 @@ context config set <key> <value>     keys: semantic on|off, model <name>
 context --help
 context --version   prints version, build commit, cache schema, runtime kind
 ```
+
+`observe`/`find`/`prepare` are the same orientation command (Observe is
+navigation, `find` is the same machinery used for exact local evidence).
+`map` compiles a bounded local RepoMap over one directory (per-file symbols,
+calls, tests) or one symbol (callers/callees/tests, one hop). `follow` walks
+one edge kind (callers, callees, tests, inherit, implement, contain, ref,
+import, all) with bounded depth and short trails. Ambiguous bare names list
+their qualified candidates instead of silently picking the first.
 
 `--targets` rejects unknown agent names (exit 1, lists known targets).
 `context config` reads/writes `~/.config/context/config.json` (honors
@@ -83,7 +96,7 @@ bun test               # unit + smoke (launcher, cache safety, incremental)
 bun run fixture        # generate the deterministic large-repo fixture (small)
 bun run eval           # retrieval eval -> fixture subset (CI, no network)
 bun run eval -- real   # + pinned real repos (clones at fixed revisions)
-bun run bench          # heavy probe: baseline/bm25/semantic, budgets, artifacts
+bun run bench          # variant idea checker: flat / DirMap / RepoMap / trails
 bun run build          # standalone binary -> ./dist/context
 bash scripts/smoke.sh ./dist/context   # clean-environment smoke suite
 ```
@@ -113,7 +126,10 @@ aggregates, so a retrieval change is accepted or rejected on real-data
 evidence:
 
 - `eval/tasks.json` — deterministic fixture subset (regression gates on
-  known-shape repos; runs in CI, no network).
+  known-shape repos; runs in CI, no network). Tasks record expected files,
+  symbols, directories, edges, and changed files (dirty-tree gates), plus
+  `bun run eval` enforces the serialized capsule budget per task (a violation
+  exits 1).
 - `eval/real-tasks.json` — reviewed tasks over pinned revisions of real
   repositories (gorilla/mux, express, flask), each recording query type,
   acceptable top-`k`, expected files/symbols, and why the answer is relevant.
@@ -121,22 +137,11 @@ evidence:
   baseline vs hybrid vs semantic (`--semantic`) with per-task regressions and
   raw JSON (`--json out.json`).
 
-`bun run bench` is the heavy on-demand probe: a large seeded corpus of
-synthetic adversarial code + markdown with planted "needle" facts (paraphrase
-queries sharing zero terms with the fact) mixed with, via `--real`, cloned
-public repos and downloaded real multi-format documents. Every run writes its
-corpus **manifest** (seed, environment, versions, full task list), raw
-per-task **results**, and a **failure corpus** (`failures.jsonl` — every
-confirmed miss, preserved before any ranking change) to `var/bench-*`, and
-enforces declared latency/memory/index **budgets** per size (WARN when
-exceeded). `--semantic --models "A,B"` compares local embedding models on the
-hard slices (paraphrase needles + cross-format docs) before any default-model
-change. Reported quality classes: symbol, path, change, concept, needle,
-cross-format, ambiguous. Bench facts are honest: exact-symbol/path/change and
-ambiguous queries reach ~90-100%; concept is near-perfect on synthetic but
-hard on real repos (code legitimately beats docs); disjoint paraphrase needles
-expose the embedding model's ceiling; cross-format real docs are hard on large
-corpora.
+`bun run bench` is the variant idea checker: one pinned corpus, one budget,
+four observation variants (flat hits / +DirMap / +neighborhood RepoMap /
++graph trails). It reports per-task deltas in file, directory, and trail
+recall plus serialized tokens, so an observation change is accepted or
+rejected per task rather than on an aggregate headline.
 
 ### Semantic fallback (optional, local)
 
@@ -194,6 +199,19 @@ missing loader). See `scripts/mk-launcher.sh`.
 - Every assertion points to source and labels resolution quality.
 - Deterministic output for a fixed tree + task.
 - Emits `context:telemetry <json>` on stderr; all token counts are `estimated`.
+- The capsule budget is truthful: measured on the final serialized form (both
+  renderings), with a deterministic drop order (entry points → unresolved →
+  files → DirMap → changed → next → hits); `tokensUsed` is the real cost,
+  including its own literal.
+- Observe is L0 → L1 → L2: a compact DirMap of the top task-affine
+  directories first, then a neighborhood RepoMap (`map`), then exact evidence
+  (`expand`/`find`). DirMap ranks directories by task affinity, never by
+  symbol count alone.
+- Changed files live in a bounded `changed` section, separate from task
+  relevance; recent-change only boosts symbols the task is already about (or
+  a query explicitly about recent work).
+- Ambiguous symbol names surface qualified candidates (`file::name::line`);
+  `follow`/`impact` never silently pick the first same-name symbol.
 - The symbol graph stays authoritative: exact-name / recent-change /
   explicit-file hits pin the answer, and BM25/semantic matches append below.
   Docs (non-code) interleave only when they cover more query terms than the
@@ -222,10 +240,10 @@ missing loader). See `scripts/mk-launcher.sh`.
 
 Savings projection (`src/savings.ts`) estimates the input tokens the capsule
 replaces (its pointed-at source spans) minus capsule tokens; `estimated`, per
-the plan's token accounting. Feasibility proof lives in `spike/` and the
-retrieval baseline in `eval/`. Retrieval results on pinned real revisions are
-reproducible via `bun run eval -- real`; agent-task (end-to-end) usefulness
-measurement is the next step, not yet claimed.
+the plan's token accounting. The runtime decision (Bun over Rust) is recorded
+in `spike/README.md`; the retrieval baseline lives in `eval/`. Retrieval
+results on pinned real revisions are reproducible via `bun run eval -- real`;
+agent-task (end-to-end) usefulness measurement is the next step, not yet
+claimed.
 
-See `skill/SKILL.md` for the host-neutral agent skill and `spike/README.md`
-for the feasibility spike.
+See `skill/SKILL.md` for the host-neutral agent skill.

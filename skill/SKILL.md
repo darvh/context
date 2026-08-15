@@ -9,12 +9,14 @@ Host-neutral. One call at the start of non-trivial repository work.
 
 ## Usage
 
-1. Run `context prepare "<user task>"` before non-trivial repository discovery.
-2. Start from the capsule instead of repeating its searches and reads.
-3. Use `context impact <symbol>` when the capsule reports uncertain structural reach.
-4. Expand only named handles with `context expand <handle>` (or `context expand <file:line>`).
-5. Fall back to normal repository tools when Context has weak or empty results.
-6. Treat output as navigation, not evidence. Source, Git, build output, and tests are authoritative.
+1. Run `context observe "<user task>"` (alias: `prepare`, `find`) before non-trivial repository discovery.
+2. Start from the capsule instead of repeating its searches and reads. The capsule shows the top directories (DirMap), relevant files, and hits with source ranges.
+3. Use `context map <directory|symbol>` when the capsule's neighborhood needs a local map (callers/callees/tests).
+4. Use `context follow <symbol> <edge>` when a graph trail matters more than a score.
+5. Use `context impact <symbol>` when the capsule reports uncertain structural reach.
+6. Expand only named handles with `context expand <handle>` (or `context expand <file:line>`).
+7. Fall back to normal repository tools when Context has weak or empty results.
+8. Treat output as navigation, not evidence. Source, Git, build output, and tests are authoritative.
 
 ## When not to use
 

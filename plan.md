@@ -98,11 +98,34 @@ these correctness and compression problems are fixed.
   Baseline failures 1 and 2 reproduced, then fixed; regression gates added
   (truthful-budget and dirty-tree tests, eval budget-violation checks, dirty
   fixture `cmd/migrate/migrate.go` with zero topical affinity).
+- Vectors 3–6, 8 done. DirMap L0 (`src/dirmap.ts`) ranks directories by task
+  affinity, never symbol count, and appears as the capsule `dirs` section.
+  Neighborhood RepoMap (`src/repo-map.ts`, `context map <dir|symbol>`) and
+  graph trails (`src/follow.ts`, `context follow <symbol> <edge>`) compile a
+  bounded local map from the cached graph per request. Symbol identity is
+  navigation-safe: ambiguous bare names surface qualified candidates
+  (`file::name::line`) instead of silently picking the first. Every hit now
+  carries its full source range and `context expand` returns the recorded span
+  with bounded context. Doc hits carry section ordinal and heading. Ops:
+  `observe`/`find`/`prepare` (orientation), `map`, `follow`, `expand`,
+  `impact` (qualified-id aware).
+- Bench replaced: `scripts/bench.ts` is the variant idea checker (flat /
+  DirMap / +RepoMap / +trails) over the pinned eval corpus, reporting per-task
+  file/dir/trail recall and token deltas. Disposable spike wrappers removed
+  (`spike/bench.ts`, `spike/results.json`, `spike/context-bin`, `spike/src`);
+  the runtime decision is a note in `spike/README.md`; `spike/grammars` stays
+  (bundled by the compiled binary).
 - Measured after the fix: eval serialized tokens 1041–1045 avg vs 1200 budget,
   0/19 violations; all dirty-tree tasks recall 100% with no regression on the
-  previous 14 tasks; 69 unit tests pass. The bm25 lane also stopped
-  re-admitting import symbols as hits (they were never supposed to be targets;
-  the truthful budget exposed it).
+  previous 14 tasks; 80 unit tests pass. Variant runner: 19/19 tasks at 100%
+  file/dir/trail recall in every variant, +122 avg tokens for the full
+  pipeline (1058 → 1180). The bm25 lane also stopped re-admitting import
+  symbols as hits (they were never supposed to be targets; the truthful budget
+  exposed it).
+- Not yet done: Vector 7 doc section structure is mostly present (sections
+  with lines); exact heading-path retrieval for converted office docs still
+  needs the section-ordinal/char-range depth. Release-gate item 9 (paired
+  agent tasks) is the next external step.
 
 ## Observation contract
 
@@ -365,12 +388,12 @@ note, not as a second benchmark system.
 1. ✅ Establish the baseline corpus and record the budget, dirty-tree, and
    pinpoint failures above.
 2. ✅ Fix truthful budgeting and changed-context pollution.
-3. Implement DirMap and the L0 → L1 → L2 observation progression.
-4. Compile a neighborhood RepoMap with diversity limits.
-5. Make symbol identity and graph trails navigation-safe.
-6. Make code and document expansion span/section-backed.
-7. Replace the current bench with the variant idea checker.
-8. Extend `eval` as the deterministic regression gate.
+3. ✅ Implement DirMap and the L0 → L1 → L2 observation progression.
+4. ✅ Compile a neighborhood RepoMap with diversity limits.
+5. ✅ Make symbol identity and graph trails navigation-safe.
+6. ✅ Make code and document expansion span/section-backed.
+7. ✅ Replace the current bench with the variant idea checker.
+8. ✅ Extend `eval` as the deterministic regression gate.
 9. Run paired agent tasks and publish only improvements that survive both
    deterministic and agent-level checks.
 

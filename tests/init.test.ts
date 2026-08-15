@@ -16,7 +16,7 @@ describe("context init", () => {
 
     const dst = path.join(repo, ".opencode", "skills", "context", "SKILL.md");
     const content = await fs.readFile(dst, "utf8");
-    expect(content).toContain("context prepare");
+    expect(content).toContain("context observe");
 
     const r2 = await init(opts);
     expect(r2.find((r) => r.what === "skill")?.status).toBe("up-to-date");

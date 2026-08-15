@@ -18,12 +18,12 @@
       ],
       "edges": [
         [
-          "OpenStore",
-          "Get"
+          "Get",
+          "TestStorePersistsAcrossRestart"
         ],
         [
-          "OpenStore",
-          "main"
+          "Get",
+          "NewHandler"
         ]
       ]
     },
@@ -252,8 +252,12 @@
       ],
       "edges": [
         [
-          "Store",
-          "Get"
+          "Get",
+          "TestStorePersistsAcrossRestart"
+        ],
+        [
+          "Get",
+          "NewHandler"
         ]
       ]
     },

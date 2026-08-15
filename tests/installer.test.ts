@@ -45,7 +45,7 @@ describe("install.sh", () => {
     expect(out).toContain("pi");
     const skill = path.join(proj, ".agents", "skills", "context", "SKILL.md");
     expect(existsSync(skill)).toBe(true);
-    expect(await fs.readFile(skill, "utf8")).toContain("context prepare");
+    expect(await fs.readFile(skill, "utf8")).toContain("context observe");
     await fs.rm(proj, { recursive: true, force: true });
   });
 });

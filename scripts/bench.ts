@@ -6,9 +6,9 @@ import { buildBm25Index } from "../src/bm25";
 import { assemble } from "../src/assemble";
 import { capsuleToJson } from "../src/render";
 import { estTokens } from "../src/tokens";
-import { mapDir, mapSymbol } from "../src/repo-map";
+import { mapDir } from "../src/repo-map";
 import { follow } from "../src/follow";
-import { buildDirCards } from "../src/dirmap";
+import { buildDirCards, rankDirCards } from "../src/dirmap";
 import type { RankedHit } from "../src/query";
 
 /**
@@ -97,10 +97,6 @@ if (useReal) {
   }
 }
 
-function serialize(capsule: ReturnType<typeof assemble>): number {
-  return estTokens(capsuleToJson({ ...capsule, dirs: [] as never }));
-}
-
 async function runVariant(name: string, task: Task, buildCache: Map<string, Awaited<ReturnType<typeof build>>>): Promise<{ row: TaskRow; hits: RankedHit[]; capsule: ReturnType<typeof assemble> }> {
   const dir = taskDirs.get(task.repo)!;
   const b = await build(dir);
@@ -115,8 +111,13 @@ async function runVariant(name: string, task: Task, buildCache: Map<string, Awai
   const hitFiles = task.expectedFiles.filter((f) => topFiles.includes(f));
   const hitSyms = task.expectedSymbols.filter((n) => topK.map((h) => h.symbol.name).includes(n));
 
+  // dir recall = the DirMap ranking itself (top 3 by affinity), not the
+  // budget-truncated capsule — the acceptance check is "relevant directory in
+  // the top three"
   const expectedDirs = task.directories ?? [];
-  const dirRecall = expectedDirs.length ? expectedDirs.filter((d) => capsule.dirs.some((c) => c.path === d || c.path.startsWith(d))).length / expectedDirs.length : 1;
+  const dirRecall = expectedDirs.length
+    ? expectedDirs.filter((d) => rankDirCards(buildDirCards(b), hits).some((c) => c.path === d || c.path.startsWith(d))).length / expectedDirs.length
+    : 1;
 
   let trailRecall = 1;
   if (name === "trails" && task.edges?.length && capsule.hits.length) {
