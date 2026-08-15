@@ -119,6 +119,30 @@ export function queryConfidence(hits: RankedHit[]): QueryConfidence {
 // boost on top of a real match, never a ranking reason by itself.
 const RECENT_WORDS = new Set(["recent", "recently", "change", "changed", "changes", "modify", "modified", "uncommitted", "dirty"]);
 
+/** Pick the section of a doc that best matches the task terms, so a semantic
+ *  doc hit pinpoints the matching region instead of always defaulting to line
+ *  1. Scores sections by meaningful-term overlap; ties break to the first
+ *  section. Returns the selected section, or the first section when nothing
+ *  matches. */
+export function bestDocSection(d: DocFact, task: string): DocFact["sections"][number] | undefined {
+  if (!d.sections.length) return undefined;
+  const t = meaningfulTerms(task);
+  if (!t.length) return d.sections[0];
+  const tset = new Set(t);
+  let best = d.sections[0];
+  let bestScore = 0;
+  for (const s of d.sections) {
+    const terms_ = meaningfulTerms(s.text);
+    let matched = 0;
+    for (const term of terms_) if (tset.has(term)) matched++;
+    if (matched > bestScore) {
+      best = s;
+      bestScore = matched;
+    }
+  }
+  return best;
+}
+
 /**
  * Append semantic hits. When the graph/lexical pass is weak (no authoritative
  * signal, few/no term matches — exactly the unresolved/low-confidence queries
@@ -126,7 +150,7 @@ const RECENT_WORDS = new Set(["recent", "recently", "change", "changed", "change
  * lexical has a genuine match or an authoritative signal, semantic appends
  * below it (graph stays authoritative).
  */
-export function appendSemanticHits(hits: RankedHit[], sem: SemanticHit[], graph: Graph, docs: DocFact[]): RankedHit[] {
+export function appendSemanticHits(hits: RankedHit[], sem: SemanticHit[], graph: Graph, docs: DocFact[], task: string): RankedHit[] {
   const seen = new Set(hits.map((h) => h.symbol.id));
   const byId = new Map(graph.symbols.map((s) => [s.id, s]));
   const docById = new Map(docs.map((d) => [d.file, d]));
@@ -161,7 +185,7 @@ export function appendSemanticHits(hits: RankedHit[], sem: SemanticHit[], graph:
     let sym: SymbolFact | null = null;
     if (h.id.startsWith("doc::")) {
       const d = docById.get(h.id.slice(5));
-      if (d) sym = docSymbol(d);
+      if (d) sym = docSymbol(d, bestDocSection(d, task)?.line ?? 1);
     } else {
       sym = byId.get(h.id) ?? null;
     }

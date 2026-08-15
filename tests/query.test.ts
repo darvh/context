@@ -59,7 +59,7 @@ describe("appendSemanticHits hybrid fusion", () => {
   test("strong base: semantic-confirmed bm25 tail hit lifts above 0 by sim", () => {
     const base: RankedHit = { symbol: g.symbols[0], score: 10, reason: ["explicit-file"], conf: "exact" };
     const bm25Hit: RankedHit = { symbol: g.symbols[1], score: 0, reason: ["bm25"], conf: "exact" };
-    const out = appendSemanticHits([base, bm25Hit], [{ id: "b.go::B::1", sim: 0.6 }], g, []);
+    const out = appendSemanticHits([base, bm25Hit], [{ id: "b.go::B::1", sim: 0.6 }], g, [], "b");
     const b = out.find((h) => h.symbol.id === "b.go::B::1")!;
     expect(b.score).toBeCloseTo(0.6);
     expect(b.reason).toContain("semantic");
@@ -68,7 +68,7 @@ describe("appendSemanticHits hybrid fusion", () => {
 
   test("weak base: graph hits semantics confirms keep maxBase+sim position", () => {
     const weakBase: RankedHit = { symbol: g.symbols[0], score: 2, reason: ["identifier-match"], conf: "exact" };
-    const out = appendSemanticHits([weakBase], [{ id: "a.go::A::1", sim: 0.5 }, { id: "b.go::B::1", sim: 0.4 }], g, []);
+    const out = appendSemanticHits([weakBase], [{ id: "a.go::A::1", sim: 0.5 }, { id: "b.go::B::1", sim: 0.4 }], g, [], "a");
     expect(out.find((h) => h.symbol.id === "a.go::A::1")!.score).toBeCloseTo(2.5);
     expect(out.find((h) => h.symbol.id === "b.go::B::1")!.score).toBeCloseTo(2.4);
   });

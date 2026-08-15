@@ -94,7 +94,7 @@ async function cmdPrepare(args: Args) {
         const t1 = performance.now();
         const res = await sem.semanticSearch(b.root, b.graph, b.docs, task, { repoKey: repoKey(b.root) });
         if (res) {
-          if (res.symbols.length) hits = appendSemanticHits(hits, res.symbols, b.graph, b.docs);
+          if (res.symbols.length) hits = appendSemanticHits(hits, res.symbols, b.graph, b.docs, task);
           semanticDirs = res.dirs;
         }
         semStats = { model: await sem.modelName(), hits: res?.symbols.length ?? 0, dirs: res?.dirs.length ?? 0, ms: Math.round(performance.now() - t1) };

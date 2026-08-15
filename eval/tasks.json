@@ -340,7 +340,56 @@
       ],
       "expectedSymbols": [],
       "changed": [],
-      "why": "doc lane: an anydoc-converted office file must surface via its extracted sections"
+      "why": "doc lane: an anydoc-converted office file must surface via its extracted sections",
+      "directories": [
+        "docs"
+      ]
+    },
+    {
+      "id": "g-needle-1",
+      "repo": "go",
+      "query": "the app keeps losing saved values when it shuts down",
+      "type": "needle",
+      "topK": 5,
+      "expectedFiles": [
+        "internal/session/store.go"
+      ],
+      "expectedSymbols": [
+        "Set",
+        "Store"
+      ],
+      "changed": [],
+      "why": "needle: paraphrase with zero shared terms — the case the semantic lane exists for"
+    },
+    {
+      "id": "t-needle-1",
+      "repo": "typescript",
+      "query": "remembered input survives the process restarting",
+      "type": "needle",
+      "topK": 5,
+      "expectedFiles": [
+        "src/session/store.ts"
+      ],
+      "expectedSymbols": [
+        "openStore"
+      ],
+      "changed": [],
+      "why": "needle: zero-shared-term paraphrase on the TS store"
+    },
+    {
+      "id": "p-needle-1",
+      "repo": "python",
+      "query": "persist across runs even after the program exits",
+      "type": "needle",
+      "topK": 5,
+      "expectedFiles": [
+        "app/session/store.py"
+      ],
+      "expectedSymbols": [
+        "open_store"
+      ],
+      "changed": [],
+      "why": "needle: zero-shared-term paraphrase on the Python store"
     }
   ]
 }

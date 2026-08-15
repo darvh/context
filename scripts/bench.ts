@@ -3,7 +3,7 @@ import path from "node:path";
 import { build } from "../src/build";
 import { rankSymbols, explicitFilesFromTask } from "../src/query";
 import { buildBm25Index } from "../src/bm25";
-import { assemble } from "../src/assemble";
+import { assemble, type Capsule } from "../src/assemble";
 import { capsuleToJson } from "../src/render";
 import { estTokens } from "../src/tokens";
 import { mapDir } from "../src/repo-map";
@@ -12,17 +12,18 @@ import { buildDirCards, rankDirCards } from "../src/dirmap";
 import type { RankedHit } from "../src/query";
 
 /**
- * Variant idea checker: one pinned corpus, one budget, four observation
- * variants. Reports per-task deltas, not an aggregate headline.
+ * Observation idea checker: one pinned corpus, one budget, four observation
+ * variants. Each variant is a genuinely different observation of the SAME
+ * retrieval: flat (no DirMap), dirmap (+ DirMap cards), map (+ RepoMap of the
+ * top directory), trails (+ graph trails from the top hit). Retrieval is never
+ * re-ranked by a variant — a variant only changes what the agent observes — so
+ * file/dir recall is a SHARED gate, measured once from the common hits and
+ * reported as the ship condition, never as per-variant "evidence".
  *
- *   flat                    baseline flat hits (no DirMap)
- *   dirmap                  + DirMap L0 directory cards
- *   map                     + neighborhood RepoMap over the top directory
- *   trails                  + graph trails from the top hit
- *
- * Every task consumes the same pinned corpus (eval/tasks.json, plus
- * eval/real-tasks.json with --real), annotations, and budget. A variant only
- * ships when it does not regress file/symbol recall and stays within budget.
+ * Every variant must fit within the SAME single budget (BUDGET); map and
+ * follow are follow-up calls serialized on top of the dirmap capsule, not a
+ * license for a bigger budget. A variant ships only when recall does not
+ * regress AND the full serialized observation stays within budget.
  *
  *   bun run bench                     # fixture corpus
  *   bun run bench -- real              # + pinned real repos
@@ -57,13 +58,37 @@ const allTasks = await loadAllTasks(useReal);
 // clone pinned real repos (same mechanism as eval)
 const taskDirs = await buildTaskDirs(allTasks, useReal);
 
-async function runVariant(name: string, task: Task, buildCache: Map<string, Awaited<ReturnType<typeof build>>>): Promise<{ row: TaskRow; hits: RankedHit[]; capsule: ReturnType<typeof assemble> }> {
+function flatCapsule(c: Capsule): Capsule {
+  return { ...c, dirs: [] as Capsule["dirs"] };
+}
+
+/** Serialized observation per variant. flat/dirmap differ only in the DirMap
+ *  lane; map and trails add a RepoMap and trail text on top (follow-up calls).
+ *  Every variant is measured against the same BUDGET. */
+function observationTokens(name: string, capsule: Capsule, b: Awaited<ReturnType<typeof build>>): { tokens: number; mapOut: string; trailOut: string } {
+  const dirmap = estTokens(capsuleToJson(capsule));
+  const flat = estTokens(capsuleToJson(flatCapsule(capsule)));
+  let mapOut = "";
+  if (capsule.dirs.length) {
+    mapOut = mapDir(b, capsule.dirs[0].path).blocks.map((blk) => `${blk.file} ${blk.syms.map((s) => s.name).join(" ")}`).join("\n");
+  }
+  let trailOut = "";
+  if (capsule.hits.length) {
+    const hit = capsule.hits[0];
+    trailOut = renderTrails(follow(b, `${hit.file}::${hit.name}::${hit.line}`, "all", 3));
+  }
+  if (name === "flat") return { tokens: flat, mapOut, trailOut };
+  if (name === "dirmap") return { tokens: dirmap, mapOut, trailOut };
+  if (name === "map") return { tokens: dirmap + estTokens(mapOut), mapOut, trailOut };
+  return { tokens: dirmap + estTokens(mapOut) + estTokens(trailOut), mapOut, trailOut };
+}
+
+async function runTask(task: Task): Promise<TaskRow> {
   const dir = taskDirs.get(task.repo)!;
   const b = await build(dir);
-  buildCache.set(task.repo, b);
   const bm25 = buildBm25Index(b.graph, b.docs);
   const changed = new Set(task.changed);
-  const hits = rankSymbols({ task: task.query, graph: b.graph, changed, explicitFiles: explicitFilesFromTask(task.query, b.files), bm25, docs: b.docs });
+  const hits: RankedHit[] = rankSymbols({ task: task.query, graph: b.graph, changed, explicitFiles: explicitFilesFromTask(task.query, b.files), bm25, docs: b.docs });
   const capsule = assemble({ task: task.query, build: b, hits, budgetTokens: BUDGET, changed });
 
   const topK = hits.slice(0, task.topK);
@@ -80,7 +105,7 @@ async function runVariant(name: string, task: Task, buildCache: Map<string, Awai
     : 1;
 
   let trailRecall = 1;
-  if (name === "trails" && task.edges?.length && capsule.hits.length) {
+  if (task.edges?.length && capsule.hits.length) {
     const hit = capsule.hits[0];
     const f = follow(b, `${hit.file}::${hit.name}::${hit.line}`, "all", 3);
     const found = (a: string, bName: string) => f.trails.some((t) => t.steps.some((s, i) => i > 0 && s.name === bName && t.steps[i - 1].name === a));
@@ -88,40 +113,24 @@ async function runVariant(name: string, task: Task, buildCache: Map<string, Awai
     trailRecall = expected.length ? expected.reduce<number>((s, x) => s + x, 0) / expected.length : 1;
   }
 
-  // per-variant serialized tokens (ablation of the new sections)
+  // per-variant serialized tokens (ablation of the observation sections);
+  // all variants share the single budget
   const tokens: Record<string, number> = {};
   const violation: Record<string, boolean> = {};
-  const flat = { ...capsule, dirs: [] as never };
-  tokens.flat = estTokens(capsuleToJson(flat));
-  violation.flat = tokens.flat > BUDGET;
-  tokens.dirmap = estTokens(capsuleToJson(capsule));
-  violation.dirmap = tokens.dirmap > BUDGET;
-  let mapOut = "";
-  if (capsule.dirs.length) {
-    mapOut = mapDir(b, capsule.dirs[0].path).blocks.map((blk) => `${blk.file} ${blk.syms.map((s) => s.name).join(" ")}`).join("\n");
+  for (const name of ["flat", "dirmap", "map", "trails"]) {
+    const { tokens: n } = observationTokens(name, capsule, b);
+    tokens[name] = n;
+    violation[name] = n > BUDGET;
   }
-  tokens.map = estTokens(capsuleToJson(capsule)) + estTokens(mapOut);
-  violation.map = tokens.map > BUDGET * 2;
-  let trailOut = "";
-  if (capsule.hits.length) {
-    const hit = capsule.hits[0];
-    trailOut = renderTrails(follow(b, `${hit.file}::${hit.name}::${hit.line}`, "all", 3));
-  }
-  tokens.trails = tokens.map + estTokens(trailOut);
-  violation.trails = tokens.trails > BUDGET * 2;
 
   return {
-    row: {
-      id: task.id,
-      recallFiles: task.expectedFiles.length ? hitFiles.length / task.expectedFiles.length : 1,
-      recallSymbols: task.expectedSymbols.length ? hitSyms.length / task.expectedSymbols.length : 1,
-      dirRecall,
-      trailRecall,
-      tokens,
-      budgetViolation: violation,
-    },
-    hits,
-    capsule,
+    id: task.id,
+    recallFiles: task.expectedFiles.length ? hitFiles.length / task.expectedFiles.length : 1,
+    recallSymbols: task.expectedSymbols.length ? hitSyms.length / task.expectedSymbols.length : 1,
+    dirRecall,
+    trailRecall,
+    tokens,
+    budgetViolation: violation,
   };
 }
 
@@ -129,50 +138,36 @@ function renderTrails(r: ReturnType<typeof follow>): string {
   return r.trails.map((t) => t.steps.map((s) => s.name).join(" → ")).join("\n");
 }
 
-const results = new Map<string, TaskRow>();
-for (const t of allTasks) {
-  const { row } = await runVariant("flat", t, new Map());
-  results.set(t.id, row);
-}
+const rows: TaskRow[] = [];
+for (const t of allTasks) rows.push(await runTask(t));
 
-const variants: VariantResult[] = [];
-for (const name of ["flat", "dirmap", "map", "trails"]) {
-  const rows: TaskRow[] = [];
-  for (const t of allTasks) {
-    const { row } = await runVariant(name, t, new Map());
-    rows.push(row);
-  }
-  variants.push({ name, rows });
-}
-
-// per-task deltas, flat -> trails
-console.log(`\nper-task deltas (file% / dir% / trail% / tokens flat->trails / budget):`);
+console.log(`\nper-task (shared recall: files% / dir% / trail% — tokens flat/dirmap/map/trails — budget):`);
 let regressed = 0;
-for (const r of results) {
-  const [id] = r;
-  const task = allTasks.find((t) => t.id === id)!;
-  const flat = variants[0].rows.find((x) => x.id === id)!;
-  const trails = variants[3].rows.find((x) => x.id === id)!;
-  const dirmap = variants[1].rows.find((x) => x.id === id)!;
-  const tks = `${flat.tokens.flat}->${trails.tokens.trails}`;
-  const viol = Object.values(trails.budgetViolation).some(Boolean) ? "BUDGET" : "";
-  const dirs = dirmap.dirRecall < 1 ? `dirLOW(${dirmap.dirRecall.toFixed(2)})` : "";
-  const tr = trails.trailRecall < 1 ? `trailLOW(${trails.trailRecall.toFixed(2)})` : "";
-  const file = trails.recallFiles < 1 ? "fileLOW" : "";
+for (const r of rows) {
+  const file = r.recallFiles < 1 ? "fileLOW" : "";
+  const dirs = r.dirRecall < 1 ? `dirLOW(${r.dirRecall.toFixed(2)})` : "";
+  const tr = r.trailRecall < 1 ? `trailLOW(${r.trailRecall.toFixed(2)})` : "";
+  const viol = Object.values(r.budgetViolation).some(Boolean) ? "BUDGET" : "";
   const flags = [file, dirs, tr, viol].filter(Boolean).join(",");
   if (flags) regressed++;
-  console.log(`  ${id.padEnd(14)} ${(trails.recallFiles * 100).toFixed(0).padStart(3)}% / ${(trails.dirRecall * 100).toFixed(0).padStart(3)}% / ${(trails.trailRecall * 100).toFixed(0).padStart(3)}%  ${tks.padEnd(14)} ${flags || "ok"}`);
+  const tks = `f:${r.tokens.flat} d:${r.tokens.dirmap} m:${r.tokens.map} t:${r.tokens.trails}`;
+  console.log(`  ${r.id.padEnd(14)} ${(r.recallFiles * 100).toFixed(0).padStart(3)}% / ${(r.dirRecall * 100).toFixed(0).padStart(3)}% / ${(r.trailRecall * 100).toFixed(0).padStart(3)}%  ${tks.padEnd(40)} ${flags || "ok"}`);
 }
-console.log(`\n${regressed}/${results.size} tasks flagged`);
+console.log(`\n${regressed}/${rows.length} tasks flagged (shared recall is the ship gate; recall is identical across variants by design — variants only change the observation)`);
 
-for (const v of variants) {
+const byVariant: VariantResult[] = ["flat", "dirmap", "map", "trails"].map((name) => ({
+  name,
+  rows: rows.map((r) => ({ ...r, tokens: { [name]: r.tokens[name] }, budgetViolation: { [name]: r.budgetViolation[name] } })),
+}));
+for (const v of byVariant) {
   const n = v.rows.length;
   const mean = (f: (r: TaskRow) => number) => v.rows.reduce((s, r) => s + f(r), 0) / n;
-  console.log(`[${v.name}] files ${(mean((r) => r.recallFiles) * 100).toFixed(0)}% dirs ${(mean((r) => r.dirRecall) * 100).toFixed(0)}% trails ${(mean((r) => r.trailRecall) * 100).toFixed(0)}% avg tokens ${Math.round(mean((r) => r.tokens[v.name as keyof TaskRow["tokens"]]))}`);
+  const over = v.rows.filter((r) => r.budgetViolation[v.name]).length;
+  console.log(`[${v.name}] avg observation ${Math.round(mean((r) => r.tokens[v.name as keyof TaskRow["tokens"]]))} tokens  over budget ${over}/${n}`);
 }
 
 if (jsonOut) {
   await fs.mkdir(path.dirname(jsonOut), { recursive: true });
-  await fs.writeFile(jsonOut, JSON.stringify({ real: useReal, variants }, null, 2));
+  await fs.writeFile(jsonOut, JSON.stringify({ real: useReal, budget: BUDGET, rows }, null, 2));
   console.log(`raw results -> ${jsonOut}`);
 }

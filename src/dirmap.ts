@@ -18,21 +18,43 @@ export interface DirCard {
 const SURFACE_MAX = 3;
 const CARD_MAX = 3;
 
+/** Repo-relative directory of a file (shared with the semantic dir records). */
+export function dirOf(file: string): string {
+  const i = file.lastIndexOf("/");
+  return i > 0 ? file.slice(0, i) : ".";
+}
+
+interface DirAgg {
+  files: Set<string>;
+  langs: Set<string>;
+  surface: Set<string>;
+  entries: Set<string>;
+  tests: number;
+}
+
+function ensureDir(byDir: Map<string, DirAgg>, dir: string, file: string): DirAgg {
+  let c = byDir.get(dir);
+  if (!c) {
+    c = { files: new Set(), langs: new Set(), surface: new Set(), entries: new Set(), tests: 0 };
+    byDir.set(dir, c);
+  }
+  c.files.add(file);
+  c.langs.add(file.split(".").pop() ?? "");
+  return c;
+}
+
 export function buildDirCards(b: BuildResult): Map<string, DirCard> {
-  const byDir = new Map<string, { files: Set<string>; langs: Set<string>; surface: Set<string>; entries: Set<string>; tests: number }>();
+  const byDir = new Map<string, DirAgg>();
   for (const s of b.graph.symbols) {
-    const i = s.file.lastIndexOf("/");
-    const dir = i > 0 ? s.file.slice(0, i) : ".";
-    let c = byDir.get(dir);
-    if (!c) {
-      c = { files: new Set(), langs: new Set(), surface: new Set(), entries: new Set(), tests: 0 };
-      byDir.set(dir, c);
-    }
-    c.files.add(s.file);
-    c.langs.add(s.file.split(".").pop() ?? "");
+    const c = ensureDir(byDir, dirOf(s.file), s.file);
     if (s.exported && s.kind !== "import" && s.kind !== "test") c.surface.add(s.name);
     if (s.kind === "entry") c.entries.add(s.file);
     if (s.test) c.tests++;
+  }
+  // docs never enter the symbol graph, so a docs-only directory would vanish
+  // from the card map; count doc files so docs/ still surfaces
+  for (const d of b.docs) {
+    ensureDir(byDir, dirOf(d.file), d.file);
   }
   const out = new Map<string, DirCard>();
   for (const [dir, c] of byDir) {
@@ -54,17 +76,25 @@ export function buildDirCards(b: BuildResult): Map<string, DirCard> {
 export function rankDirCards(cards: Map<string, DirCard>, hits: RankedHit[]): DirCard[] {
   const score = new Map<string, number>();
   for (const h of hits) {
-    const i = h.symbol.file.lastIndexOf("/");
-    const dir = i > 0 ? h.symbol.file.slice(0, i) : ".";
+    const dir = dirOf(h.symbol.file);
     score.set(dir, (score.get(dir) ?? 0) + h.score);
   }
   const out: DirCard[] = [];
-  for (const [dir, s] of [...score.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) {
-    const c = cards.get(dir);
-    if (c) out.push(c);
-    if (out.length >= CARD_MAX) break;
-  }
+  const seen = new Set<string>();
+  const sorted = [...score.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  fill(out, seen, sorted.map(([dir]) => cards.get(dir)).filter((c): c is DirCard => !!c), CARD_MAX);
   return out;
+}
+
+/** Dedupe + cap a candidate stream into the card list (shared by the affinity
+ *  ranking and the semantic fusion). */
+function fill(out: DirCard[], seen: Set<string>, xs: DirCard[], cap: number): void {
+  for (const c of xs) {
+    if (seen.has(c.path)) continue;
+    seen.add(c.path);
+    out.push(c);
+    if (out.length >= cap) return;
+  }
 }
 
 export function renderDirCard(c: DirCard): string {
@@ -79,20 +109,13 @@ export function renderDirCard(c: DirCard): string {
  *  called when the confidence gate says the lexical pass was weak — a strong
  *  pass keeps the pure affinity order. Deterministic: ties break by path. */
 export function mergeSemanticDirs(cards: Map<string, DirCard>, affinity: DirCard[], semDirs: { path: string; sim: number }[]): DirCard[] {
-  const seen = new Set<string>();
   const out: DirCard[] = [];
-  for (const d of [...semDirs].sort((a, b) => b.sim - a.sim || a.path.localeCompare(b.path))) {
-    const c = cards.get(d.path);
-    if (!c || seen.has(c.path)) continue;
-    seen.add(c.path);
-    out.push(c);
-    if (out.length >= CARD_MAX) return out;
-  }
-  for (const c of affinity) {
-    if (seen.has(c.path)) continue;
-    seen.add(c.path);
-    out.push(c);
-    if (out.length >= CARD_MAX) return out;
-  }
+  const seen = new Set<string>();
+  const sem = [...semDirs]
+    .sort((a, b) => b.sim - a.sim || a.path.localeCompare(b.path))
+    .map((d) => cards.get(d.path))
+    .filter((c): c is DirCard => !!c);
+  fill(out, seen, sem, CARD_MAX);
+  fill(out, seen, affinity, CARD_MAX);
   return out;
 }

@@ -63,6 +63,29 @@ export async function buildTaskDirs(allTasks: Task[], useReal: boolean): Promise
   return taskDirs;
 }
 
+/** recall@k + MRR for a ranked hit list against a task's expectations.
+ *  Shared by eval (regression gate) and the experiment scripts. */
+export function measureRecall<T extends { symbol: { file: string; name: string } }>(
+  ranked: T[],
+  t: Task,
+  topK = t.topK,
+): { recallFiles: number; recallSymbols: number; mrr: number; topFiles: string[] } {
+  const top = ranked.slice(0, topK);
+  const topFiles = [...new Set(top.map((h) => h.symbol.file))];
+  const hitFiles = t.expectedFiles.filter((f) => topFiles.includes(f));
+  const hitSyms = t.expectedSymbols.filter((n) => top.map((h) => h.symbol.name).includes(n));
+  const rr = t.expectedFiles.reduce((best, f) => {
+    const rank = topFiles.indexOf(f);
+    return rank >= 0 && (best === 0 || rank < best) ? rank + 1 : best;
+  }, 0);
+  return {
+    recallFiles: t.expectedFiles.length ? hitFiles.length / t.expectedFiles.length : 1,
+    recallSymbols: t.expectedSymbols.length ? hitSyms.length / t.expectedSymbols.length : 1,
+    mrr: rr ? 1 / rr : 0,
+    topFiles,
+  };
+}
+
 /** Clone pinned real repos into var/real-eval at fixed revisions (idempotent:
  *  reuses an existing clone whose HEAD matches). */
 async function cloneReal(needed: Set<string>): Promise<Map<string, string>> {

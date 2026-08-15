@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { Graph, Span } from "./facts";
-import type { DocFact } from "./doc";
-import { cacheDir, atomicWrite } from "./cache";
 import { withTimeout } from "./async";
+import { atomicWrite, cacheDir } from "./cache";
+import type { DocFact } from "./doc";
+import { dirOf } from "./dirmap";
+import type { Graph, Span } from "./facts";
 import { meaningfulTerms } from "./query";
 
 /**
@@ -41,7 +42,6 @@ const BATCH = 64;
 const MAX_SNIPPET_LINES = 20;
 const MIN_SIM = 0.2;
 const EMBED_TIMEOUT_MS = 60_000; // per batch; expiry fails the lane, never hangs the command
-
 // MiniLM is the default that works with zero config. Code-tuned models
 // (e.g. Xenova/jina-embeddings-v2-base-code, dim 768) are gated on HF and
 // need CONTEXT_MODEL + an HF_TOKEN to download; the QUERY_PREFIX table has
@@ -121,11 +121,11 @@ export interface SemanticResult {
   dirs: SemanticDirHit[];
 }
 
-async function snippet(fileText: string, span: Span): Promise<string> {
+async function snippet(fileText: string, span: Span, maxLines: number): Promise<string> {
   const ls = fileText.split("\n");
   const from = Math.max(0, span.sl - 1);
-  const to = Math.min(ls.length, from + MAX_SNIPPET_LINES);
-  return ls.slice(from, to).join(" ").slice(0, 400);
+  const to = Math.min(ls.length, from + maxLines);
+  return ls.slice(from, to).join(" ").slice(0, maxLines * 20);
 }
 
 const HASH_BYTES = 16; // sha256 prefix per vector; content-addresses the store
@@ -173,12 +173,22 @@ async function saveStore(file: string, store: Map<string, Float32Array>, dim: nu
  * Returns vectors in `targets` order. Any load/save error degrades to
  * re-embedding everything (fail open).
  */
+/** Experiment knobs for the semantic lane. Shipped defaults are the
+ *  undefined fields; the fusion experiment varies one at a time. */
+export interface SemanticTune {
+  minSim?: number;
+  snippetLines?: number;
+  docMode?: "full" | "sections";
+  dirFull?: boolean;
+}
+
 async function embedSymbols(
   p: Pipe,
   root: string,
   targets: { id: string; span?: Span; file: string; text: string }[],
   repoKey: string,
   dim: number,
+  snippetLines = MAX_SNIPPET_LINES,
 ): Promise<Float32Array[]> {
   const file = await storePath(repoKey);
   let store: Map<string, Float32Array>;
@@ -200,7 +210,7 @@ async function embedSymbols(
         fileText = await fs.readFile(path.join(root, t.file), "utf8").catch(() => "");
         fileCache.set(t.file, fileText);
       }
-      record = `${t.text} ${await snippet(fileText, t.span)}`;
+      record = `${t.text} ${await snippet(fileText, t.span, snippetLines)}`;
     }
     const hash = createHash("sha256").update(record).digest("hex").slice(0, HASH_BYTES * 2);
     texts.push(record);
@@ -237,12 +247,15 @@ export async function semanticSearch(
   graph: Graph,
   docs: DocFact[],
   task: string,
-  opts: { repoKey: string },
+  opts: { repoKey: string; tune?: SemanticTune },
 ): Promise<SemanticResult | null> {
   const p = await loadPipeline();
   if (!p) return null;
   try {
     const model = await modelName();
+    const minSim = opts.tune?.minSim ?? MIN_SIM;
+    const snippetLines = opts.tune?.snippetLines ?? MAX_SNIPPET_LINES;
+    const docMode = opts.tune?.docMode ?? "full";
     // multi-query: the raw task phrasing plus its expanded keyword form.
     // Natural-language tasks and code tokens live in different regions of the
     // embedding space; averaging both query vectors retrieves both.
@@ -256,18 +269,26 @@ export async function semanticSearch(
     for (let j = 0; j < dim; j++) nrm += q[j] * q[j];
     nrm = Math.sqrt(nrm) || 1;
     for (let j = 0; j < dim; j++) q[j] /= nrm;
-    // imports are structural, not semantic: excluded. Docs embed their full
-    // text (section-level was benchmarked and regressed recall — isolated
-    // sections score below the sim floor and extra targets dilute the top-10).
+    // imports are structural, not semantic: excluded. Doc records are the
+    // whole extracted text by default (isolated sections score below the sim
+    // floor — see the fusion experiment for the section-mode comparison).
     const symbolTargets = [
       ...graph.symbols
         .filter((s) => s.kind !== "import")
         .map((s) => ({ id: s.id, span: s.span as Span, file: s.file, text: `${s.name} ${s.sig} ${s.doc} ${s.file}` })),
-      ...docs.map((d) => ({ id: `doc::${d.file}`, file: d.file, text: d.text })),
+      ...(docMode === "sections"
+        ? docs.flatMap((d) =>
+            d.sections.map((sec) => ({
+              id: `doc::${d.file}`,
+              file: d.file,
+              text: `${sec.text.split("\n").find((l) => l.startsWith("#")) ?? ""} ${sec.text}`,
+            })),
+          )
+        : docs.map((d) => ({ id: `doc::${d.file}`, file: d.file, text: d.text }))),
     ];
-    const dirTargets = dirRecords(graph).map((d) => ({ id: `dir::${d.path}`, file: d.path, text: d.text }));
+    const dirTargets = dirRecords(graph, opts.tune?.dirFull).map((d) => ({ id: `dir::${d.path}`, file: d.path, text: d.text }));
     const all = [...symbolTargets, ...dirTargets];
-    const vecs = await embedSymbols(p, root, all, opts.repoKey, dim);
+    const vecs = await embedSymbols(p, root, all, opts.repoKey, dim, snippetLines);
     const sims = vecs.map((v) => {
       let dot = 0;
       for (let j = 0; j < dim; j++) dot += v[j] * q[j];
@@ -275,10 +296,17 @@ export async function semanticSearch(
     });
     const ranked = all
       .map((t, i) => ({ id: t.id, sim: sims[i] }))
-      .filter((h) => h.sim >= MIN_SIM)
+      .filter((h) => h.sim >= minSim)
       .sort((a, b) => b.sim - a.sim);
-    const symbols: SemanticHit[] = ranked.filter((h) => !h.id.startsWith("dir::")).slice(0, 10).map((h) => ({ id: h.id, sim: h.sim }));
-    const dirs: SemanticDirHit[] = ranked.filter((h) => h.id.startsWith("dir::")).slice(0, 3).map((h) => ({ path: h.id.slice(5), sim: h.sim }));
+    // section mode: several records share one doc id — keep only the best
+    const dedup = new Map<string, number>();
+    for (const h of ranked) {
+      const prev = dedup.get(h.id);
+      if (prev === undefined || h.sim > prev) dedup.set(h.id, h.sim);
+    }
+    const uniq = [...dedup.entries()].map(([id, sim]) => ({ id, sim })).sort((a, b) => b.sim - a.sim);
+    const symbols: SemanticHit[] = uniq.filter((h) => !h.id.startsWith("dir::")).slice(0, 10).map((h) => ({ id: h.id, sim: h.sim }));
+    const dirs: SemanticDirHit[] = uniq.filter((h) => h.id.startsWith("dir::")).slice(0, 3).map((h) => ({ path: h.id.slice(5), sim: h.sim }));
     const out: SemanticResult = { symbols, dirs };
     return out.symbols.length || out.dirs.length ? out : null;
   } catch {
@@ -286,18 +314,23 @@ export async function semanticSearch(
   }
 }
 
-/** Directory aggregate records for embedding: path + public surface + lang. */
-function dirRecords(graph: Graph): { path: string; text: string }[] {
-  const byDir = new Map<string, { surface: string[]; lang: string }>();
+/** Directory aggregate records for embedding: path + public surface + lang,
+ *  optionally + entry points and file names (dirFull mode). */
+function dirRecords(graph: Graph, dirFull = false): { path: string; text: string }[] {
+  const byDir = new Map<string, { surface: string[]; lang: string; entries: string[]; files: Set<string> }>();
   for (const s of graph.symbols) {
     if (s.kind === "import") continue;
-    const i = s.file.lastIndexOf("/");
-    const dir = i > 0 ? s.file.slice(0, i) : ".";
-    const rec = byDir.get(dir) ?? { surface: [], lang: s.file.split(".").pop() ?? "" };
+    const dir = dirOf(s.file);
+    const rec = byDir.get(dir) ?? { surface: [], lang: s.file.split(".").pop() ?? "", entries: [], files: new Set() };
     if (s.exported && rec.surface.length < 5) rec.surface.push(s.name);
+    if (s.kind === "entry") rec.entries.push(s.file);
+    rec.files.add(s.file);
     byDir.set(dir, rec);
   }
   return [...byDir.entries()]
-    .map(([path, r]) => ({ path, text: `directory ${path} ${r.lang}: ${r.surface.join(", ")}` }))
+    .map(([path, r]) => ({
+      path,
+      text: `directory ${path} ${r.lang}: ${r.surface.join(", ")}${dirFull ? ` entry: ${r.entries.slice(0, 2).join(", ")} files: ${[...r.files].slice(0, 4).join(", ")}` : ""}`,
+    }))
     .sort((a, b) => a.path.localeCompare(b.path));
 }

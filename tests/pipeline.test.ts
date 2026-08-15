@@ -42,10 +42,12 @@ describe("expand", () => {
 
   test("doc hits expand to the cached extracted section, not raw bytes", async () => {
     const root = path.join(import.meta.dir, "..", "spike", "fixtures", "go");
-    const e = await expandDocSection(root, "docs/archiver-policy.rtf", 3);
+    // coordinates are EXTRACTED markdown lines, not original RTF bytes; the
+    // converted doc has no source mapping, so line 1 selects the first section
+    const e = await expandDocSection(root, "docs/archiver-policy.rtf", 1);
     expect(e).not.toBeNull();
     expect(e!.lines.join("\n")).toContain("cold storage"); // extracted markdown, not mojibake
-    expect(e!.fromLine).toBe(3);
+    expect(e!.fromLine).toBe(1);
   });
 });
 

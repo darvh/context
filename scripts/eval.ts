@@ -28,7 +28,7 @@ import type { RankedHit } from "../src/query";
  *   bun run eval -- --json out.json   # raw per-task results
  */
 
-import { buildTaskDirs, loadAllTasks, type Task } from "./eval-shared";
+import { buildTaskDirs, loadAllTasks, measureRecall, type Task } from "./eval-shared";
 
 const BUDGET_TOKENS = 1200;
 
@@ -109,7 +109,7 @@ async function runVariant(name: string, tasks: Task[], taskDirs: Map<string, str
     if (semantic && queryConfidence(hits) !== "strong") {
       const sem = await semanticSearch(b2.root, b2.graph, b2.docs, t.query, { repoKey: repoKey(b2.root) });
       if (sem) {
-        if (sem.symbols.length) hits = appendSemanticHits(hits, sem.symbols, b2.graph, b2.docs);
+        if (sem.symbols.length) hits = appendSemanticHits(hits, sem.symbols, b2.graph, b2.docs, t.query);
         semanticDirs = sem.dirs;
       }
     }
@@ -119,16 +119,7 @@ async function runVariant(name: string, tasks: Task[], taskDirs: Map<string, str
     const outputTokens = estTokens(capsuleToJson(capsule));
     const budgetViolation = outputTokens > BUDGET_TOKENS;
 
-    const topK = hits.slice(0, t.topK);
-    const topFiles = [...new Set(topK.map((h) => h.symbol.file))];
-    const topNames = topK.map((h) => h.symbol.name);
-    const hitFiles = t.expectedFiles.filter((f) => topFiles.includes(f));
-    const hitSyms = t.expectedSymbols.filter((n) => topNames.includes(n));
-    const rr = t.expectedFiles.reduce((best, f) => {
-      const rank = topFiles.indexOf(f);
-      return rank >= 0 && (best === 0 || rank < best) ? rank + 1 : best;
-    }, 0);
-
+    const m = measureRecall(hits, t);
     results.push({
       id: t.id,
       type: t.type,
@@ -136,10 +127,10 @@ async function runVariant(name: string, tasks: Task[], taskDirs: Map<string, str
       query: t.query,
       why: t.why,
       expectedFiles: t.expectedFiles,
-      recallFiles: t.expectedFiles.length ? hitFiles.length / t.expectedFiles.length : 1,
-      recallSymbols: t.expectedSymbols.length ? hitSyms.length / t.expectedSymbols.length : 1,
-      mrr: rr ? 1 / rr : 0,
-      topFiles,
+      recallFiles: m.recallFiles,
+      recallSymbols: m.recallSymbols,
+      mrr: m.mrr,
+      topFiles: m.topFiles,
       outputTokens,
       budgetViolation,
     });
@@ -163,11 +154,21 @@ function summarize(v: VariantResult) {
   console.log(`  cold latency:     p50 ${c50.toFixed(0)}ms  p95 ${c95.toFixed(0)}ms`);
   console.log(`  warm latency:     p50 ${w50.toFixed(0)}ms  p95 ${w95.toFixed(0)}ms`);
   console.log(`  index size:       ${v.indexBytes} bytes (bm25)  cache hits ${v.cacheHits}/${v.cacheHits + v.parsed}`);
-  const missed = v.tasks.filter((t) => t.recallFiles === 0);
-  if (missed.length) {
-    console.log(`  top-k misses:`);
-    for (const m of missed) console.log(`    ${m.id} "${m.query}" expected ${m.expectedFiles.join(",")} got ${m.topFiles.slice(0, 3).join(",") || "(none)"}`);
-  }
+  const report = (title: string, xs: TaskResult[], line: (m: TaskResult) => string) => {
+    if (!xs.length) return;
+    console.log(`  ${title}:`);
+    for (const m of xs) console.log(`    ${line(m)}`);
+  };
+  report(
+    "top-k misses",
+    v.tasks.filter((t) => t.recallFiles === 0 && t.type !== "needle"),
+    (m) => `${m.id} "${m.query}" expected ${m.expectedFiles.join(",")} got ${m.topFiles.slice(0, 3).join(",") || "(none)"}`,
+  );
+  report(
+    "semantic-lane needles (ceiling tasks, not deterministic misses)",
+    v.tasks.filter((t) => t.type === "needle"),
+    (m) => `${m.id} "${m.query}" recall ${m.recallFiles > 0 ? "hit" : "miss (embedding model ceiling)"} got ${m.topFiles.slice(0, 2).join(",") || "(none)"}`,
+  );
   if (budgetViolations) {
     console.log(`  budget violations:`);
     for (const t of v.tasks.filter((x) => x.budgetViolation)) console.log(`    ${t.id} "${t.query}" serialized ${t.outputTokens} > ${BUDGET_TOKENS}`);

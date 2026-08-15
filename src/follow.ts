@@ -123,7 +123,13 @@ export function renderFollow(r: FollowResult): string {
   lines.push(`trails from ${r.symbol.name} (${r.symbol.kind}) via ${r.edge} edge:`);
   if (!r.trails.length) lines.push("  (no reachable symbols)");
   for (const t of r.trails) {
-    const parts = t.steps.map((s, i) => (i === 0 ? `${s.name} ${s.file}:${s.line}` : `${s.edge} ${s.name} ${s.file}:${s.line}`));
+    const parts = t.steps.map((s, i) => {
+      if (i === 0) return `${s.name} ${s.file}:${s.line}`;
+      // direction of the step relative to the previous symbol: in = this step
+      // is the source of the edge (a caller), out = it is the target (callee)
+      const rel = s.dir === "in" ? "caller" : "callee";
+      return `${s.edge} ${s.name} ${s.file}:${s.line} (${rel})`;
+    });
     lines.push(`  ${parts.join(" → ")}`);
   }
   if (r.truncated) lines.push(`  (trail list truncated at ${MAX_TRAILS} — follow deeper with a qualified id)`);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { build } from "../src/build";
 import { impact, renderImpact } from "../src/impact";
-import { follow } from "../src/follow";
+import { follow, renderFollow } from "../src/follow";
 import { mapDir } from "../src/repo-map";
 import { buildDirCards, rankDirCards } from "../src/dirmap";
 import { rankSymbols } from "../src/query";
@@ -60,6 +60,19 @@ describe("follow trails", () => {
     const b = await buildGo();
     const r = follow(b, "internal/session/store.go::OpenStore::18", "all");
     expect(r.symbol?.name).toBe("OpenStore");
+  });
+
+  test("renderFollow shows caller vs callee direction on the same edge kind", async () => {
+    const b = await buildGo();
+    const r = follow(b, "OpenStore", "all");
+    const out = renderFollow(r);
+    // OpenStore is called by main (inbound edge -> caller) and calls
+    // Store.Get (outbound edge -> callee); both use the "call" edge kind, so
+    // only the direction label distinguishes them.
+    expect(out).toContain("call main cmd/server/main.go");
+    expect(out).toContain("(caller)");
+    expect(out).toContain("call Get internal/session/store.go");
+    expect(out).toContain("(callee)");
   });
 
   test("ambiguous bare name yields candidates, never a silent pick", async () => {
