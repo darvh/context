@@ -1,8 +1,7 @@
 {
   "ignore": [
     "scripts/hooks/hook-*.ts",
-    "scripts/hooks/statusline.ts",
-    "spike/fixtures/**"
+    "scripts/hooks/statusline.ts"
   ],
   "ignoreDependencies": [
     "tree-sitter-bash",

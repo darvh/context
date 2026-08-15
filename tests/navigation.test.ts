@@ -69,11 +69,9 @@ describe("follow trails", () => {
     const out = renderFollow(r);
     // OpenStore is called by main (inbound edge -> caller) and calls
     // Store.Get (outbound edge -> callee); both use the "call" edge kind, so
-    // only the direction label distinguishes them.
-    expect(out).toContain("call main cmd/server/main.go");
-    expect(out).toContain("(caller)");
-    expect(out).toContain("call Get internal/session/store.go");
-    expect(out).toContain("(callee)");
+    // only the direction arrow distinguishes them.
+    expect(out).toContain("← call main (entry) cmd/server/main.go");
+    expect(out).toContain("→ call Get (method) internal/session/store.go");
   });
 
   test("ambiguous bare name yields candidates, never a silent pick", async () => {

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { promises as fs } from "node:fs";
 import { build } from "./out/build";
 import { rankSymbols, explicitFilesFromTask, queryConfidence, fuseFileHits } from "./rank/query";
 import { assemble, type Capsule } from "./out/assemble";
@@ -19,8 +20,9 @@ usage:
   context observe "<task>" [--budget N] [--json] [--root DIR]
                 [--ignore pat[,pat]] [--no-gitignore]
   context map <directory> [--root DIR]
-  context follow <symbol|qualified-id> [<edge>] [--root DIR]
+  context follow <symbol|qualified-id> [<edge>] [--depth N] [--root DIR]
   context expand <handle|file:line> [--root DIR]
+  context read <file> [--root DIR]
   context impact <symbol|qualified-id|--diff> [--json] [--root DIR]
                [--ignore pat[,pat]] [--no-gitignore]
   context init [--targets all|opencode,claude-code,codex,cursor,copilot,antigravity,pi]
@@ -37,7 +39,8 @@ observe (alias: prepare) is orientation: DirMap + neighborhoods + spans.
 map compiles a bounded local RepoMap over one directory. follow walks one edge
 kind from a symbol (call, import, inherit, implement, ref, contain, test, all)
 with short trails; caller/callee analysis is impact's job. impact is the
-symbol map + diff. expand is exact span evidence.
+symbol map + diff. expand is exact span evidence; read dumps a whole document
+(its cached extracted text for binary formats).
 
 ignore override:
   --ignore "a,b"   add extra ignore globs (on top of .gitignore + defaults)
@@ -48,15 +51,17 @@ interface Args {
   root: string;
   budget: number;
   json: boolean;
+  depth: number;
   rest: string[];
   scan: ScanOpts;
 }
 
 async function parseArgs(argv: string[]): Promise<Args> {
-  const args: Args = { root: process.cwd(), budget: 1200, json: false, rest: [], scan: {} };
+  const args: Args = { root: process.cwd(), budget: 1200, json: false, depth: 3, rest: [], scan: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--budget") args.budget = Number(argv[++i]) || 1200;
+    else if (a === "--depth") args.depth = Math.min(6, Math.max(1, Number(argv[++i]) || 3));
     else if (a === "--json") args.json = true;
     else if (a === "--root") args.root = path.resolve(argv[++i]);
     else if (a.startsWith("--root=")) args.root = path.resolve(a.slice(7));
@@ -164,6 +169,36 @@ async function cmdExpand(args: Args) {
   process.stdout.write(renderExpanded(e));
 }
 
+async function cmdRead(args: Args) {
+  const file = args.rest[0];
+  if (!file) {
+    console.error("usage: context read <file>");
+    process.exit(1);
+  }
+  const root = (await (await import("./graph/scan")).findRoot(args.root)) ?? args.root;
+  const rel = path.relative(root, path.resolve(root, file));
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    console.error(`context: path escapes the repo: ${file}`);
+    process.exit(1);
+  }
+  const b = await build(root, args.scan);
+  // doc record first: binary PDF/Office files are unreadable raw, so dump the
+  // cached extracted markdown; text files fall through to the raw read.
+  // ponytail: extracted text is bounded at 64k chars (doc lane ceiling); a
+  // true full-doc dump would need a re-extract — add when someone hits it.
+  const d = b.docs.find((x) => x.file === file);
+  if (d?.text) {
+    process.stdout.write(d.text + "\n");
+    return;
+  }
+  try {
+    process.stdout.write(await fs.readFile(path.resolve(root, file), "utf8"));
+  } catch {
+    console.error(`context: no such file: ${file}`);
+    process.exit(1);
+  }
+}
+
 async function cmdImpact(args: Args) {
   const t0 = performance.now();
   const arg = args.rest[0];
@@ -237,9 +272,9 @@ async function cmdFollow(args: Args) {
     console.error(`context: unknown edge "${edge}" (known: ${EDGE_KINDS.join(", ")})`);
     process.exit(1);
   }
-  const r = follow(b, symbol, edge);
+  const r = follow(b, symbol, edge, args.depth);
   const out = renderFollow(r);
-  console.error("context:telemetry " + JSON.stringify({ cmd: "follow", symbol, edge, trails: r.trails.length, outputTokens: estTokens(out) }));
+  console.error("context:telemetry " + JSON.stringify({ cmd: "follow", symbol, edge, depth: args.depth, trails: r.trails.length, outputTokens: estTokens(out) }));
   process.stdout.write(out);
 }
 
@@ -347,6 +382,9 @@ export async function main(argv: string[]) {
   } else if (cmd === "expand") {
     args.rest.shift();
     await cmdExpand(args);
+  } else if (cmd === "read") {
+    args.rest.shift();
+    await cmdRead(args);
   } else if (cmd === "impact") {
     args.rest.shift();
     await cmdImpact(args);

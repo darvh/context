@@ -12,6 +12,7 @@ context observe "<task>" [--budget N] [--json] [--root DIR]
 context map <directory> [--root DIR]
 context follow <symbol|qualified-id> [<edge>|symbol2] [--root DIR]
 context expand <handle|file:line> [--root DIR]
+context read <file> [--root DIR]
 context impact <symbol|qualified-id|--diff> [--json] [--root DIR]
                [--ignore pat[,pat]] [--no-gitignore]
 context init [--targets all|opencode,claude-code,codex,cursor,copilot,antigravity,pi]
@@ -89,7 +90,7 @@ The authoritative lane fuses graph relationships, changed-file, explicit-path, e
   - *session-delta*: symbols already shown this task session get a novelty penalty (disposable per-tree state, no profiling).
 - **BM25** (`src/rank/bm25.ts`): SQLite FTS5/BM25, porter-stemmed, one row per symbol plus one row per non-code document *section*.
 - **Typed artifacts** (`src/out/artifacts.ts`): env vars (`process.env.X`, `os.Getenv(...)`, `ENV[...]`, ...) and config keys (`config.get("key")`) become first-class config symbols, so `DATABASE_URL` resolves exactly.
-- **Docs lane** (`src/core/doc.ts`): non-code files (markdown/text read directly; Word/Excel/PowerPoint/OpenDocument/RTF/EPUB/PDF converted by `@firecrawl/anydoc` — a local Rust core, no LLM, no network) are indexed by their extracted text. Long documents are split into bounded sections (headings / paragraph runs, ≤4KB each, ≤40 per doc) that carry their source start and end line, so a 25KB file cannot bury its answer and `context expand` lands on the section that matched (a doc hit's range covers the whole section; binary formats expand from the cached extracted Markdown, never raw bytes). They never enter the symbol graph; a matching doc carries a real BM25 score so a documentation query surfaces its document.
+- **Docs lane** (`src/core/doc.ts`): non-code files (markdown/text read directly; Word/Excel/PowerPoint/OpenDocument/RTF/EPUB/PDF converted by `@firecrawl/anydoc` — a local Rust core, no LLM, no network) are indexed by their extracted text. Long documents are split into bounded sections (headings / paragraph runs, ≤4KB each, ≤40 per doc) that carry their source start and end line, so a 25KB file cannot bury its answer and `context expand` lands on the section that matched (a doc hit's range covers the whole section; binary formats expand from the cached extracted Markdown, never raw bytes). `context read <file>` dumps the full cached extraction for binary documents the agent cannot read directly. They never enter the symbol graph; a matching doc carries a real BM25 score so a documentation query surfaces its document.
 - **Code↔doc links** (`src/graph/links.ts`): exact-token/path mentions of exported symbols in document sections produce deterministic links; `impact` shows `documented_by`.
 - **Compiler-backed overlay** (`src/graph/overlay.ts`, `src/graph/scip.ts`): a binary SCIP index (`index.scip`) or a documented JSON facts file (`.context/facts.json`) merges into the tree-sitter graph — exact definitions, references, and implementations upgrade confidence. Tree-sitter behavior is unchanged when no overlay exists; Context never generates indexes itself.
 

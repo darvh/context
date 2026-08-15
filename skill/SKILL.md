@@ -31,7 +31,8 @@ One `context observe` call replaces repetitive searching. It is `$0` (the instal
    | `context follow <symbol> <edge>` | need callers/callees trails |
    | `context follow <symbol> <symbol2>` | need how two symbols connect |
    | `context impact <symbol>` | need callers, tests, documented_by, diff |
-   | `context expand <handle\|file:line>` | need the exact source span |
+   | `context expand <handle\|file:line>` | need the source span that matched — code or one doc section |
+   | `context read <file>` | need the whole document, not just the matched section (binary PDF/Office — cannot be read directly) |
 
 4. Read `confidence`: `strong` = trust and go; `conflicted` = several competing neighborhoods, pick by reading; `weak`/`empty` = fall back to grep/rg, context could not resolve it.
 

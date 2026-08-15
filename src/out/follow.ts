@@ -10,6 +10,7 @@ export const EDGE_KINDS = ["call", "import", "inherit", "implement", "ref", "con
 interface TrailStep {
   id: string;
   name: string;
+  kind: SymbolFact["kind"];
   file: string;
   line: number;
   via: string; // "file:line"
@@ -80,7 +81,7 @@ export function follow(b: BuildResult, name: string, edge: string, depth = MAX_D
   const trails: Trail[] = [];
   const visited = new Set<string>([start.id]);
   const frontier: { id: string; via: string; edge: Edge["kind"]; dir: "out" | "in"; trail: TrailStep[] }[] = [
-    { id: start.id, via: `${start.file}:${start.nameLine}`, edge: "" as Edge["kind"], dir: "out", trail: [{ id: start.id, name: start.name, file: start.file, line: start.nameLine, via: "", edge: "", dir: "out" }] },
+    { id: start.id, via: `${start.file}:${start.nameLine}`, edge: "" as Edge["kind"], dir: "out", trail: [{ id: start.id, name: start.name, kind: start.kind, file: start.file, line: start.nameLine, via: "", edge: "", dir: "out" }] },
   ];
   let truncated = false;
   let depthNow = 0;
@@ -94,7 +95,7 @@ export function follow(b: BuildResult, name: string, edge: string, depth = MAX_D
       for (const [e, dir] of edges) {
         const nextId = f.id === e.from ? e.to : e.from;
         const s = symbolAt(nextId, byId);
-        const t: TrailStep = { id: nextId, name: s.name, file: s.file, line: s.nameLine, via: e.at, edge: e.kind, dir };
+        const t: TrailStep = { id: nextId, name: s.name, kind: s.kind, file: s.file, line: s.nameLine, via: e.at, edge: e.kind, dir };
         if (trails.length >= MAX_TRAILS) break;
         trails.push({ steps: [...f.trail, t] });
         if (depthNow < depth - 1) {
@@ -130,13 +131,14 @@ export function renderFollow(r: FollowResult): string {
   if (!r.trails.length) lines.push("  (no reachable symbols)");
   for (const t of r.trails) {
     const parts = t.steps.map((s, i) => {
-      if (i === 0) return `${s.name} ${s.file}:${s.line}`;
-      // direction of the step relative to the previous symbol: in = this step
-      // is the source of the edge (a caller), out = it is the target (callee)
-      const rel = s.dir === "in" ? "caller" : "callee";
-      return `${s.edge} ${s.name} ${s.file}:${s.line} (${rel})`;
+      const kind = s.kind ? ` (${s.kind})` : "";
+      if (i === 0) return `${s.name}${kind} ${s.file}:${s.line}`;
+      // ← = the edge points back at the previous step (walking to the edge's
+      // source, e.g. a caller); → = it points forward (e.g. a callee). Arrow
+      // + edge kind stay language-neutral — "caller/callee" only fit call edges.
+      return `${s.dir === "in" ? "←" : "→"} ${s.edge} ${s.name}${kind} ${s.file}:${s.line}`;
     });
-    lines.push(`  ${parts.join(" → ")}`);
+    lines.push(`  ${parts.join(" ")}`);
   }
   if (r.truncated) lines.push(`  (trail list truncated at ${MAX_TRAILS} — follow deeper with a qualified id)`);
   return lines.join("\n");

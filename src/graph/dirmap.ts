@@ -98,7 +98,7 @@ function fill(out: DirCard[], seen: Set<string>, xs: DirCard[], cap: number): vo
 }
 
 export function renderDirCard(c: DirCard): string {
-  const lines = [`  ${c.path}/  ${c.files} files · ${c.lang} · ${c.tests} tests`];
+  const lines = [`  ${c.path}/  ${c.files} files · ${c.lang}${c.tests ? ` · ${c.tests} tests` : ""}`];
   if (c.surface.length) lines.push(`    public: ${c.surface.join(", ")}`);
   if (c.entryPoints.length) lines.push(`    entry: ${c.entryPoints.join(", ")}`);
   return lines.join("\n");

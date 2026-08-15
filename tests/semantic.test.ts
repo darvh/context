@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import path from "node:path";
 import { semanticEnabled, SEMANTIC_VERSION } from "../src/rank/semantic";
 
 describe("semantic fallback", () => {
   test("explicit opt-in via CONTEXT_SEMANTIC; off by default", async () => {
     const prev = process.env.CONTEXT_SEMANTIC;
+    const prevXdg = process.env.XDG_CONFIG_HOME;
     delete process.env.CONTEXT_SEMANTIC;
+    process.env.XDG_CONFIG_HOME = path.join(import.meta.dir, "empty-config");
     expect(await semanticEnabled()).toBe(false);
 
     process.env.CONTEXT_SEMANTIC = "1";
@@ -14,6 +17,8 @@ describe("semantic fallback", () => {
 
     if (prev === undefined) delete process.env.CONTEXT_SEMANTIC;
     else process.env.CONTEXT_SEMANTIC = prev;
+    if (prevXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = prevXdg;
   });
 
   test("embedding schema is versioned (model + schema hash in the cache key)", () => {
