@@ -81,20 +81,23 @@ async function cmdPrepare(args: Args) {
   // The gate decides whether semantic candidates are consulted at all: a
   // strong lexical pass never pays the embedding cost.
   let semanticDirs: { path: string; sim: number }[] | undefined;
+  let semStats: { model: string; hits: number; dirs: number; ms: number } | undefined;
   if (queryConfidence(hits) !== "strong") {
-    const { semanticEnabled, semanticSearch } = await import("./semantic");
-    if (await semanticEnabled()) {
+    const sem = await import("./semantic");
+    if (await sem.semanticEnabled()) {
       if (runtimeKind() === "compiled") {
         // explicit runtime boundary: the compiled binary cannot load the ONNX
         // runtime from the bundle; the source entrypoint (launcher fallback)
         // can. Degrade loudly, never silently.
         console.error("context: semantic fallback unavailable in the compiled runtime (embedding runtime not bundled); use the Bun source entrypoint or unset semantic");
       } else {
-        const sem = await semanticSearch(b.root, b.graph, b.docs, task, { repoKey: repoKey(b.root) });
-        if (sem) {
-          if (sem.symbols.length) hits = appendSemanticHits(hits, sem.symbols, b.graph, b.docs);
-          semanticDirs = sem.dirs;
+        const t1 = performance.now();
+        const res = await sem.semanticSearch(b.root, b.graph, b.docs, task, { repoKey: repoKey(b.root) });
+        if (res) {
+          if (res.symbols.length) hits = appendSemanticHits(hits, res.symbols, b.graph, b.docs);
+          semanticDirs = res.dirs;
         }
+        semStats = { model: await sem.modelName(), hits: res?.symbols.length ?? 0, dirs: res?.dirs.length ?? 0, ms: Math.round(performance.now() - t1) };
       }
     }
   }
@@ -119,6 +122,7 @@ async function cmdPrepare(args: Args) {
     capsuleTokens: capsule.tokensUsed,
     outputTokens: estTokens(out),
     sourceCacheMiss: b.sourceCacheMiss,
+    sem: semStats,
   };
   console.error("context:telemetry " + JSON.stringify(tel));
   process.stdout.write(out);

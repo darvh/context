@@ -42,14 +42,15 @@ const MAX_SNIPPET_LINES = 20;
 const MIN_SIM = 0.2;
 const EMBED_TIMEOUT_MS = 60_000; // per batch; expiry fails the lane, never hangs the command
 
-// code-tuned: trained on code+docs pairs, beats MiniLM on identifier-heavy
-// queries. Falls back to lexical/graph on load failure, so a failed 160MB
-// download degrades gracefully. Override with CONTEXT_MODEL.
-const DEFAULT_MODEL = "Xenova/jina-embeddings-v2-base-code";
+// MiniLM is the default that works with zero config. Code-tuned models
+// (e.g. Xenova/jina-embeddings-v2-base-code, dim 768) are gated on HF and
+// need CONTEXT_MODEL + an HF_TOKEN to download; the QUERY_PREFIX table has
+// their instruction prefix ready. Any load failure degrades to lexical.
+const DEFAULT_MODEL = "Xenova/all-MiniLM-L6-v2";
 
 /** Env wins over config, config over default. Cached per process. */
 let modelMemo: string | null = null;
-async function modelName(): Promise<string> {
+export async function modelName(): Promise<string> {
   if (modelMemo) return modelMemo;
   const env = process.env.CONTEXT_MODEL;
   if (env) return (modelMemo = env);

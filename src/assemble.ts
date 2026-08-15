@@ -16,6 +16,7 @@ export interface CapsuleHit {
   sig: string;
   reason: string[];
   conf: string;
+  score: number;
 }
 
 export interface Capsule {
@@ -84,6 +85,7 @@ export function assemble({ task, build, hits, budgetTokens, changed, semanticDir
       sig: h.symbol.sig.slice(0, MAX_SIG),
       reason: h.reason,
       conf: h.conf,
+      score: Math.round(h.score * 100) / 100,
     });
   }
 

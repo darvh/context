@@ -20,8 +20,8 @@ describe("semantic fallback", () => {
     expect(SEMANTIC_VERSION).toMatch(/^semantic-v\d+$/);
   });
 
-  test("default model is code-tuned (local inference, fail-open on load)", () => {
-    // CONTEXT_MODEL override exists; default is the code-tuned one.
-    expect(process.env.CONTEXT_MODEL ?? "Xenova/jina-embeddings-v2-base-code").toBe("Xenova/jina-embeddings-v2-base-code");
+  test("default model works with zero config; code-tuned model is opt-in", () => {
+    // CONTEXT_MODEL override exists; default is the ungated laptop-friendly one.
+    expect(process.env.CONTEXT_MODEL ?? "Xenova/all-MiniLM-L6-v2").toBe("Xenova/all-MiniLM-L6-v2");
   });
 });

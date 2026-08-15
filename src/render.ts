@@ -37,6 +37,7 @@ export function renderCapsule(c: Capsule): string {
     if (h.sig) lines.push(`    sig: ${h.sig}`);
     if (h.reason.length) lines.push(`    reason: ${h.reason.join(", ")}`);
     lines.push(`    conf: ${h.conf}`);
+    lines.push(`    score: ${h.score}`);
   }
 
   if (c.unresolvedTerms.length) {
