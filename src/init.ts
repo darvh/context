@@ -39,12 +39,13 @@ export interface InitOptions {
   create?: boolean;
 }
 
-// Compiled binaries bundle src/ into $bunfs; the real skill/ ships NEXT to the
-// binary in the release layout (context/dist/context + context/skill). Source
-// runs resolve it from the checkout. First real path wins.
+// Compiled binaries bundle src/ into $bunfs; skill/ is EMBEDDED via
+// `--asset ./skill` (readable at import.meta.dir/skill). Source runs resolve
+// it from the checkout. First real path wins.
 async function skillDir(): Promise<string> {
   const exe = path.dirname(process.execPath);
   const candidates = [
+    path.join(import.meta.dir ?? "", "skill"), // embedded (standalone)
     path.join(exe, "..", "skill"),
     path.join(exe, "skill"),
     path.join(import.meta.dir ?? "", "..", "skill"),
@@ -58,15 +59,13 @@ async function skillDir(): Promise<string> {
   return candidates[candidates.length - 1];
 }
 
-// Same resolution for the hook adapters: compiled binaries cannot serve
-// scripts from $bunfs, so the real scripts/ must sit next to the binary
-// (context/dist/context + context/scripts). Source runs use the checkout.
+// Same resolution for the checkout scripts (source-mode hook commands).
 async function scriptsDir(): Promise<string> {
   const exe = path.dirname(process.execPath);
   const candidates = [
+    path.join(import.meta.dir ?? "", "..", "scripts"),
     path.join(exe, "..", "scripts"),
     path.join(exe, "scripts"),
-    path.join(import.meta.dir ?? "", "..", "scripts"),
   ];
   for (const c of candidates) {
     try {
@@ -75,6 +74,27 @@ async function scriptsDir(): Promise<string> {
     } catch {}
   }
   return candidates[candidates.length - 1];
+}
+
+// Hook adapters are SELF-HOSTED: the compiled binary serves `hook-user`,
+// `hook-agent`, and `hook-session` subcommands, so hosts spawn the binary
+// itself and no scripts/ sibling directory is needed. Source runs use the
+// checkout scripts via bun.
+async function hookCommands(): Promise<{ user: string; agent: string; session: string }> {
+  const standalone = (Bun as unknown as { isStandaloneExecutable?: boolean }).isStandaloneExecutable === true;
+  if (standalone) {
+    return {
+      user: `"${process.execPath}" hook-user`,
+      agent: `"${process.execPath}" hook-agent`,
+      session: `"${process.execPath}" hook-session`,
+    };
+  }
+  const scripts = await scriptsDir();
+  return {
+    user: `bun run ${path.join(scripts, "hook-user.ts")}`,
+    agent: `bun run ${path.join(scripts, "hook-agent.ts")}`,
+    session: `bun run ${path.join(scripts, "hook-session.ts")}`,
+  };
 }
 
 function resolveAgent(t: (typeof TARGETS)[number], opts: InitOptions): string {
@@ -86,6 +106,12 @@ function resolveAgent(t: (typeof TARGETS)[number], opts: InitOptions): string {
 export function agentPaths(opts: InitOptions): string[] {
   const agents = opts.only.length ? TARGETS.filter((t) => opts.only.includes(t.name)) : TARGETS;
   return agents.map((t) => resolveAgent(t, opts));
+}
+
+async function copyFile(src: string, dst: string): Promise<void> {
+  // embedded (bunfs) sources cannot be copyFile'd: read then write
+  const data = await fs.readFile(src);
+  await fs.writeFile(dst, data);
 }
 
 async function fileEq(a: string, b: string): Promise<boolean> {
@@ -129,11 +155,11 @@ export async function init(opts: InitOptions): Promise<InitResult[]> {
       if (!opts.force) {
         out.push({ agent: t.name, what: "skill", dir: dstDir, status: "conflict", note: "use --force to overwrite" });
       } else {
-        if (!opts.dryRun) await fs.copyFile(src, dst);
+        if (!opts.dryRun) await copyFile(src, dst);
         out.push({ agent: t.name, what: "skill", dir: dstDir, status: "updated", note: opts.dryRun ? "dry-run" : undefined });
       }
     } else {
-      if (!opts.dryRun) await fs.copyFile(src, dst);
+      if (!opts.dryRun) await copyFile(src, dst);
       out.push({ agent: t.name, what: "skill", dir: dstDir, status: "installed", note: opts.dryRun ? "dry-run" : undefined });
     }
   }
@@ -146,12 +172,31 @@ export async function init(opts: InitOptions): Promise<InitResult[]> {
 
 // --no-hooks is the opt-out; hooks install by default for hosts that support
 // them (never silently — each host gets an explicit config entry).
+/** Shared hooks-config prologue: resolve dir, agent-miss when absent
+ *  (manual init never creates silently), mkdir, load, conflict-check.
+ *  Returns null when the caller must skip writing. */
+async function loadHooksConfig(agent: string, opts: InitOptions, configPath: string, out: InitResult[]): Promise<any | null> {
+  const dir = path.dirname(configPath);
+  if (!opts.project && !opts.create && !(await exists(dir))) {
+    out.push({ agent, what: "hooks-config", dir, status: "agent-miss" });
+    return null;
+  }
+  await fs.mkdir(dir, { recursive: true });
+  let cfg: any = {};
+  try {
+    cfg = JSON.parse(await fs.readFile(configPath, "utf8"));
+  } catch {}
+  const hooks = cfg.hooks ?? {};
+  if (hooks.SessionStart || hooks.UserPromptSubmit || hooks.Stop) {
+    out.push({ agent, what: "hooks-config", dir: configPath, status: "conflict", note: "existing hooks; use --force to overwrite" });
+    if (!opts.force || opts.dryRun) return null;
+  }
+  return cfg;
+}
+
 async function installHooks(opts: InitOptions): Promise<InitResult[]> {
   const out: InitResult[] = [];
-  const scripts = await scriptsDir();
-  const userHook = `bun run ${path.join(scripts, "hook-user.ts")}`;
-  const agentHook = `bun run ${path.join(scripts, "hook-agent.ts")}`;
-  const sessionHook = `bun run ${path.join(scripts, "hook-session.ts")}`;
+  const { user: userHook, agent: agentHook, session: sessionHook } = await hookCommands();
 
   for (const t of TARGETS) {
     if (opts.only.length && !opts.only.includes(t.name)) continue;
@@ -159,21 +204,9 @@ async function installHooks(opts: InitOptions): Promise<InitResult[]> {
       const settingsPath = opts.project
         ? path.join(opts.repo, ".claude", "settings.json")
         : path.join(homedir(), ".claude", "settings.json");
-      const dir = path.dirname(settingsPath);
-      if (!opts.project && !opts.create && !(await exists(dir))) {
-        out.push({ agent: t.name, what: "hooks-config", dir, status: "agent-miss" });
-        continue;
-      }
-      await fs.mkdir(dir, { recursive: true });
-      let cfg: any = {};
-      try {
-        cfg = JSON.parse(await fs.readFile(settingsPath, "utf8"));
-      } catch {}
+      const cfg = await loadHooksConfig(t.name, opts, settingsPath, out);
+      if (!cfg) continue;
       const hooks = cfg.hooks ?? {};
-      if (hooks.SessionStart || hooks.UserPromptSubmit || hooks.Stop) {
-        out.push({ agent: t.name, what: "hooks-config", dir: settingsPath, status: "conflict", note: "existing hooks; use --force to overwrite" });
-        if (!opts.force || opts.dryRun) continue;
-      }
       if (opts.dryRun) {
         out.push({ agent: t.name, what: "hooks-config", dir: settingsPath, status: "updated", note: "dry-run" });
         continue;
@@ -238,16 +271,8 @@ expand with: context expand \${c.hits?.[0]?.handle ?? ""}\`);
       // codex supports UserPromptSubmit (prompt injection, same shape as
       // claude) and Stop (common output fields) via ~/.codex/hooks.json.
       const hooksPath = opts.project ? path.join(opts.repo, ".codex", "hooks.json") : path.join(homedir(), ".codex", "hooks.json");
-      const dir = path.dirname(hooksPath);
-      if (!opts.project && !opts.create && !(await exists(dir))) {
-        out.push({ agent: t.name, what: "hooks-config", dir, status: "agent-miss" });
-        continue;
-      }
-      await fs.mkdir(dir, { recursive: true });
-      let cfg: any = {};
-      try {
-        cfg = JSON.parse(await fs.readFile(hooksPath, "utf8"));
-      } catch {}
+      const cfg = await loadHooksConfig(t.name, opts, hooksPath, out);
+      if (!cfg) continue;
       const hooks = cfg.hooks ?? {};
       if (hooks.SessionStart || hooks.UserPromptSubmit || hooks.Stop) {
         out.push({ agent: t.name, what: "hooks-config", dir: hooksPath, status: "conflict", note: "existing hooks; use --force to overwrite" });

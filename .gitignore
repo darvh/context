@@ -17,3 +17,4 @@ node_modules/
 /.cursor/skills/
 /.agents/skills/
 /.pi/skills/
+vendor/

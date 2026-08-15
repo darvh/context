@@ -215,13 +215,16 @@ stored, explicitly:
   first use. Model size, latency, and failure behavior are all visible; any
   failure degrades to the lexical/graph result.
 
-Note: the semantic runtime boundary is explicit and enforced. The compiled
-binary cannot load the ONNX runtime from its bundle, so when semantic is
-enabled under the compiled runtime the command states so on stderr and
-degrades to the lexical/graph result — it never fails and never silently
-skips. The Bun source entrypoint (launcher fallback, installer source path)
-runs the full lane. `context --version` reports which runtime you are on, and
-`scripts/smoke.sh` verifies the boundary against a clean install.
+Note: the semantic lane runs in both runtimes. The compiled binary embeds
+the onnxruntime native binding (vendored `.node`, resolved via tsconfig
+paths) and loads its runtime library from the file beside the binary
+(`libonnxruntime.1.24.3.dylib` / `libonnxruntime.so.1`), so the installed
+system needs neither Bun nor Node — the binary self-hosts everything,
+including the hook adapters (`context hook-user` / `hook-agent` /
+`hook-session`). Any embedding or model failure degrades to the
+lexical/graph result, never a crash. On hosts that cannot execute compiled
+binaries, the launcher falls back to the Bun source entrypoint (documented
+last resort; the source path also needs Bun for installs from a checkout).
 
 ## Cache
 

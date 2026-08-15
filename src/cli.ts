@@ -10,7 +10,7 @@ import { lastCapsulePath, writeJson, repoKey, readJson, sessionStatePath } from 
 import { buildBm25Index } from "./bm25";
 import { appendSemanticHits } from "./query";
 import { estTokens } from "./tokens";
-import { buildInfo, runtimeKind } from "./version";
+import { buildInfo } from "./version";
 import type { ScanOpts } from "./scan";
 
 const HELP = `context — deterministic discovery compiler
@@ -71,6 +71,10 @@ async function parseArgs(argv: string[]): Promise<Args> {
 async function cmdPrepare(args: Args) {
   const t0 = performance.now();
   const task = args.rest.join(" ").trim() || args.rest[0] || "";
+  if (!task) {
+    console.error("usage: context observe \"<task>\" [--budget N] [--json] [--root DIR]");
+    process.exit(1);
+  }
   const b = await build(args.root, args.scan);
   const changed = await changedFiles(b.root);
   const explicit = explicitFilesFromTask(task, b.files);
@@ -94,20 +98,16 @@ async function cmdPrepare(args: Args) {
   if (queryConfidence(hits) !== "strong") {
     const sem = await import("./semantic");
     if (await sem.semanticEnabled()) {
-      if (runtimeKind() === "compiled") {
-        // explicit runtime boundary: the compiled binary cannot load the ONNX
-        // runtime from the bundle; the source entrypoint (launcher fallback)
-        // can. Degrade loudly, never silently.
-        console.error("context: semantic fallback unavailable in the compiled runtime (embedding runtime not bundled); use the Bun source entrypoint or unset semantic");
-      } else {
-        const t1 = performance.now();
-        const res = await sem.semanticSearch(b.root, b.graph, b.docs, task, { repoKey: repoKey(b.root) });
-        if (res) {
-          if (res.symbols.length) hits = appendSemanticHits(hits, res.symbols, b.graph, b.docs, task);
-          semanticDirs = res.dirs;
-        }
-        semStats = { model: await sem.modelName(), hits: res?.symbols.length ?? 0, dirs: res?.dirs.length ?? 0, ms: Math.round(performance.now() - t1) };
+      const t1 = performance.now();
+      // the semantic lane runs in the compiled runtime too: the onnxruntime
+      // native binding is embedded (vendor shim) with its dylib beside the
+      // binary; any failure fails open to the lexical/graph result
+      const res = await sem.semanticSearch(b.root, b.graph, b.docs, task, { repoKey: repoKey(b.root) });
+      if (res) {
+        if (res.symbols.length) hits = appendSemanticHits(hits, res.symbols, b.graph, b.docs, task);
+        semanticDirs = res.dirs;
       }
+      semStats = { model: await sem.modelName(), hits: res?.symbols.length ?? 0, dirs: res?.dirs.length ?? 0, ms: Math.round(performance.now() - t1) };
     }
   }
   const capsule = assemble({ task, build: b, hits, budgetTokens: args.budget, changed, semanticDirs, seen });
@@ -345,11 +345,52 @@ export async function main(argv: string[]) {
   } else if (cmd === "config") {
     args.rest.shift();
     await cmdConfig(args.rest);
+  } else if (cmd === "hook-user" || cmd === "hook-agent" || cmd === "hook-session") {
+    // host hook adapters, self-hosted so the compiled binary needs no scripts/
+    // sibling directory: hosts spawn `<binary> hook-*` with JSON on stdin.
+    args.rest.shift();
+    await cmdHook(cmd);
   } else {
     console.error(`context: unknown command "${cmd}"\n`);
     console.error(HELP);
     process.exit(1);
   }
+}
+
+async function cmdHook(kind: string) {
+  const raw = await Bun.stdin.text();
+  let input: Record<string, unknown> = {};
+  try {
+    input = JSON.parse(raw || "{}") as Record<string, unknown>;
+  } catch {
+    // hook adapters fail open; malformed host input must not block the agent
+  }
+  if (kind === "hook-user") {
+    const { runHook } = await import("./hooks/user");
+    const task = String(input.prompt ?? input.message ?? input.user_prompt ?? "");
+    const cwd = String(input.cwd ?? input.workspace ?? process.cwd());
+    await runHook(task, cwd, { exit: true });
+    return;
+  }
+  if (kind === "hook-agent") {
+    const { runAgentHook } = await import("./hooks/agent");
+    const usage = input.usage as { input?: number; output?: number; total?: number } | undefined;
+    await runAgentHook(
+      {
+        text: String(input.text ?? input.response ?? input.message ?? ""),
+        usage: usage && {
+          input: Number(usage.input ?? 0),
+          output: Number(usage.output ?? 0),
+          total: Number(usage.total ?? 0),
+        },
+        hook_event_name: typeof input.hook_event_name === "string" ? input.hook_event_name : undefined,
+      },
+      { exit: true },
+    );
+    return;
+  }
+  const { SESSION_REMINDER } = await import("./hooks/session");
+  process.stdout.write(SESSION_REMINDER + "\n");
 }
 
 if (import.meta.main) {

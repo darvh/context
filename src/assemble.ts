@@ -137,10 +137,14 @@ function packToBudget(
   const chosen: Packable[] = [];
   const filesIn = new Set<string>();
   const addHit = (h: CapsuleHit) => {
+    if (c.hits.includes(h)) return;
     c.hits.push(h);
     filesIn.add(h.file);
   };
-  const addDir = (d: DirCard) => c.dirs.push(d);
+  const addDir = (d: DirCard) => {
+    if (c.dirs.includes(d)) return;
+    c.dirs.push(d);
+  };
 
   // pins first, then minimal orientation: top dir + top hit when they fit
   const pick: Packable[] = [];
@@ -189,7 +193,8 @@ function packToBudget(
   c.dirs = c.dirs.slice(0, 3);
 
   // final fit: serialized cost measured to fixpoint (tokensUsed is part of
-  // the serialized form); remove the lowest-utility lanes first, pins last
+  // the serialized form); remove the lowest-utility lanes first, pins last.
+  // truncated reflects what the consumer sees: anything popped = cut output
   let truncated = false;
   for (;;) {
     c.tokensUsed = serializedCost(c);

@@ -11,6 +11,10 @@ export interface LangConf {
 export function grammarDir(): string {
   const env = process.env.CONTEXT_GRAMMAR_DIR;
   if (env && env.trim()) return env.endsWith('/') ? env : env + '/';
+  if ((Bun as unknown as { isStandaloneExecutable?: boolean }).isStandaloneExecutable === true) {
+    // embedded via `bun build --compile --asset ./spike/grammars`
+    return path.join(import.meta.dir, 'grammars') + '/';
+  }
   try {
     const exe = (Bun as unknown as { executablePath?: string }).executablePath;
     if (exe && !exe.endsWith('/bun') && !exe.endsWith('bun')) {

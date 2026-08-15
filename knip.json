@@ -16,5 +16,6 @@
     "tree-sitter-ruby",
     "tree-sitter-rust",
     "tree-sitter-typescript"
-  ]
+  ],
+  "ignoreBinaries": ["otool", "install_name_tool"]
 }

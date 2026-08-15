@@ -100,7 +100,13 @@ install_from_source() {
   init_args+=(--create) # installer creates absent home-scope agent dirs
   [[ "$dry_run" == 1 ]] && init_args+=(--dry-run)
   [[ "$hooks" == 0 ]] && init_args+=(--no-hooks)
-  bun run "$runtime_root/src/cli.ts" init "${init_args[@]}"
+  # run init with the COMPILED binary so hook commands self-host
+  # ("<binary>" hook-user) — the installed system needs no bun or node
+  if [[ -x "$install_root/dist/context" ]]; then
+    "$install_root/dist/context" init "${init_args[@]}"
+  else
+    bun run "$runtime_root/src/cli.ts" init "${init_args[@]}"
+  fi
 }
 
 install_from_release() {
