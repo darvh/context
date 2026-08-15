@@ -91,11 +91,13 @@ async function cmdPrepare(args: Args) {
   const seen = session && session.tree === b.treeHash ? new Set(session.seen) : undefined;
 
   // pipeline: exact/lexical -> confidence gate -> semantic lane (opt-in).
-  // The gate decides whether semantic candidates are consulted at all: a
-  // strong lexical pass never pays the embedding cost.
+  // conflicted already surfaces alternatives, so the lane runs only for
+  // weak/empty queries — never paying the embedding cost when alternatives
+  // are on the table or a strong match pinned the answer.
   let semanticDirs: { path: string; sim: number }[] | undefined;
   let semStats: { model: string; hits: number; dirs: number; ms: number } | undefined;
-  if (queryConfidence(hits) !== "strong") {
+  const conf = queryConfidence(hits);
+  if (conf === "weak" || conf === "empty") {
     const sem = await import("./semantic");
     if (await sem.semanticEnabled()) {
       const t1 = performance.now();

@@ -323,10 +323,83 @@ export function expandIrregular(term: string): string[] {
   return base && base !== term ? [term, base] : [term];
 }
 
+/** Repo-driven compound split: an unseparated query token ("treesitter")
+ *  that matches nothing is split at every point where BOTH halves exist in
+ *  the repository's own term vocabulary ("tree" + "sitter" from a
+ *  "tree-sitter" comment). No hardcoded lexicon — the repo decides which
+ *  joined words are meaningful. Deterministic: first valid split scanning
+ *  left-longest. A half that is ubiquitous (appears in more than a third of
+ *  symbols, e.g. "line") cannot anchor a split, so "deadline" never becomes
+ *  dead+line. */
+export function splitByRepoVocab(term: string, vocab: Set<string>, symbolCount: number, freq: Map<string, number>, cooccur: Set<string>): string[] {
+  if (vocab.has(term) || term.length < 6) return [term];
+  const maxFreq = Math.max(2, Math.ceil(symbolCount / 3));
+  for (let i = 3; i <= term.length - 3; i++) {
+    const a = term.slice(0, i);
+    const b = term.slice(i);
+    const key = a < b ? `${a}\0${b}` : `${b}\0${a}`; // cooccur stores pairs alphabetically
+    if (vocab.has(a) && vocab.has(b) && cooccur.has(key) && (freq.get(a) ?? 0) <= maxFreq && (freq.get(b) ?? 0) <= maxFreq) return [term, a, b];
+  }
+  return [term];
+}
+
+/** Repository term vocabulary + per-term symbol frequency, memoized per graph.
+ *  Terms come from the same per-symbol term sets ranking already uses. */
+/** All observed term pairs of a bounded term set (alphabetical key). */
+function addPairs(terms: string[], cooccur: Set<string>): void {
+  const arr = terms.slice(0, 60); // bound: one dense file cannot explode pairs
+  for (let i = 0; i < arr.length; i++) {
+    for (let j = i + 1; j < arr.length; j++) {
+      const a = arr[i];
+      const b = arr[j];
+      cooccur.add(a < b ? `${a}\0${b}` : `${b}\0${a}`);
+    }
+  }
+}
+
+const vocabMemo = new WeakMap<Graph, { vocab: Set<string>; freq: Map<string, number>; cooccur: Set<string> }>();
+export function repoVocab(graph: Graph, docs: DocFact[]): { vocab: Set<string>; freq: Map<string, number>; cooccur: Set<string>; symbolCount: number } {
+  let m = vocabMemo.get(graph);
+  if (!m) {
+    m = { vocab: new Set(), freq: new Map(), cooccur: new Set() };
+    const fileTerms = new Map<string, Set<string>>();
+    for (const s of graph.symbols) {
+      if (s.kind === "import") continue;
+      const terms_ = symTermsFor(s, graph);
+      for (const term of terms_) {
+        m.vocab.add(term);
+        m.freq.set(term, (m.freq.get(term) ?? 0) + 1);
+      }
+      // co-occurrence is observed at FILE level: a joined word's halves are
+      // meaningful when the repo uses them together in one file (phrases span
+      // symbols), which still rejects accidental halves in unrelated files
+      let ft = fileTerms.get(s.file);
+      if (!ft) {
+        ft = new Set();
+        fileTerms.set(s.file, ft);
+      }
+      for (const term of terms_) ft.add(term);
+    }
+    for (const [, ft] of fileTerms) addPairs([...ft], m.cooccur);
+    for (const d of docs) {
+      const terms_ = [...docTermsFor(d)];
+      for (const term of terms_) m.vocab.add(term);
+      // docs count as co-occurrence too: phrases like "view engine" live in
+      // markdown, not in symbol comments
+      addPairs(terms_, m.cooccur);
+    }
+    vocabMemo.set(graph, m);
+  }
+  const symbols = graph.symbols.filter((s) => s.kind !== "import").length;
+  return { vocab: m.vocab, freq: m.freq, cooccur: m.cooccur, symbolCount: symbols || 1 };
+}
+
 export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs, coChanged }: QueryInput): RankedHit[] {
-  // irregular-form expansion: "kept" also matches "keep" (the porter stemmer
-  // misses irregular past tense; the base form must exist in the repo)
-  const t = meaningfulTerms(task).flatMap(expandIrregular);
+  // irregular-form + repo-driven compound expansion: "kept" also matches
+  // "keep", and "treesitter" splits into repo vocabulary ("tree"+"sitter")
+  // when the joined token matches nothing
+  const rv = repoVocab(graph, docs ?? []);
+  const t = meaningfulTerms(task).flatMap(expandIrregular).flatMap((term) => splitByRepoVocab(term, rv.vocab, rv.symbolCount, rv.freq, rv.cooccur));
   const tset = new Set(t);
   const recentIntent = t.some((w) => RECENT_WORDS.has(w));
   const historyIntent = HISTORY_INTENT.test(task);
