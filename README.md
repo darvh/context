@@ -284,27 +284,55 @@ missing loader). See `scripts/mk-launcher.sh`.
 - Retrieval changes ship with reproducible evidence: `bun run eval` per-task
   regressions on pinned revisions, `bun run bench` budgets per variant.
 
-## Hooks (host adapters, both fail open)
+## Hooks (host adapters, all fail open)
+
+Wiring is per-host, matching what each agent actually supports:
+
+| Host | Skill | SessionStart | UserPromptSubmit | PostToolUse | Statusline |
+|---|---|---|---|---|---|
+| claude-code | ✓ | ✓ orientation | ✓ capsule | ✓ blast radius | ✓ (only host with a statusLine channel) |
+| codex | ✓ | ✓ (matcher `startup\|resume\|compact`) | ✓ capsule | ✓ blast radius (`systemMessage`) | — |
+| opencode | ✓ | — (no hook) | compaction plugin | ✓ blast radius (`tool.execute.after`) | — |
+| cursor / copilot / antigravity / pi | ✓ | — | — | — | — |
 
 - `scripts/hook-user.ts` — UserPromptSubmit: injects one compact capsule per
   (task, working-tree) pair: DirMap cards first (task-affine directories, plus
   the directories of any attached files, marked `[attached]`), then paths and
   relevant symbols — symbols already shown this session are flagged
   `(already shown)` (one-time full orientation, then only what is new). Never
-  rewrites commands or mutates the repo.
-- `scripts/hook-agent.ts` — agent-response (Claude Code `Stop`): reads the
-  projected savings the user hook stored and emits a Graft-style
-  `~X tokens saved (Y%, net ~Z after capsule)` line. **Telemetry, not a chat
-  line**: Claude Code does not render Stop-hook output, so the projection
-  reaches hook logs, not the conversation, and is never injected back into the
-  model context.
+  rewrites commands or mutates the repo. A cheap repo-affinity gate skips the
+  build entirely for pure-chat prompts (no shared term with any cached file
+  path or symbol name). The same hook folds the projected savings into the
+  per-session running total the statusline shows.
+- `scripts/hook-edit.ts` — PostToolUse on Write/Edit/MultiEdit (Claude Code) or
+  apply_patch (Codex): computes the blast radius of the edited file (symbols in
+  it that other files depend on) and marks the graph dirty, which drives the
+  statusline's `⚠ N stale` badge. Claude Code gets it injected via
+  `hookSpecificOutput.additionalContext`; Codex has no PostToolUse
+  additionalContext, so it surfaces the same text as `systemMessage`.
+- `scripts/hook-session.ts` — SessionStart: a graft-style orientation —
+  "reach for `context observe` first" directive plus a compact repo overview
+  (top directories by size, symbol/edge totals) built from the incremental
+  graph, bounded by a 6s timeout. Emitted as `additionalContext` JSON, which
+  both Claude Code and Codex accept.
+- `statusline` (Claude Code only) — live `statusLine`/`subagentStatusLine`:
+  `◤ context · N symbols / M edges · ✓ synced | ⚠ N stale · ~N tok saved`,
+  plus `ctx N%` and the last edited file. Reads the hook-maintained cache only
+  — a pure read, no subprocess, so the host's per-render call stays cheap.
+- opencode plugin — wires blast radius onto opencode's `tool.execute.after`
+  for `edit`/`write`/`apply_patch` and keeps the capsule alive across
+  compaction.
+
+There is no Stop/agent hook: Claude Code does not render Stop output, and the
+session token savings already live in the statusline, so the per-turn line was
+removed.
 
 Savings projection (`src/savings.ts`) estimates the input tokens the capsule
-replaces (its pointed-at source spans) minus capsule tokens; `estimated`, per
-the plan's token accounting. The runtime decision (Bun over Rust) is recorded
-in `spike/README.md`; the retrieval baseline lives in `eval/`. Retrieval
-results on pinned real revisions are reproducible via `bun run eval -- real`;
-agent-task (end-to-end) usefulness measurement is the next step, not yet
-claimed.
+replaces — the whole files its hits point at, capped (≤4 files, ≤4KB each,
+≤12KB total) minus capsule tokens, labeled `estimated` everywhere. The runtime
+decision (Bun over Rust) is recorded in `spike/README.md`; the retrieval
+baseline lives in `eval/`. Retrieval results on pinned real revisions are
+reproducible via `bun run eval -- real`; agent-task (end-to-end) usefulness
+measurement is the next step, not yet claimed.
 
 See `skill/SKILL.md` for the host-neutral agent skill.

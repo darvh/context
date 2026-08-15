@@ -30,6 +30,9 @@ usage:
   context --help
   context --version
 
+(host adapters, spawned by hooks / the statusline — not for direct use):
+  context hook-user|hook-edit|hook-session|statusline
+
 observe (alias: prepare) is orientation: DirMap + neighborhoods + spans.
 map compiles a bounded local RepoMap over one directory. follow walks one edge
 kind from a symbol (call, import, inherit, implement, ref, contain, test, all)
@@ -347,11 +350,14 @@ export async function main(argv: string[]) {
   } else if (cmd === "config") {
     args.rest.shift();
     await cmdConfig(args.rest);
-  } else if (cmd === "hook-user" || cmd === "hook-agent" || cmd === "hook-session") {
+  } else if (cmd === "hook-user" || cmd === "hook-session" || cmd === "hook-edit") {
     // host hook adapters, self-hosted so the compiled binary needs no scripts/
     // sibling directory: hosts spawn `<binary> hook-*` with JSON on stdin.
     args.rest.shift();
-    await cmdHook(cmd);
+    await cmdHook(cmd, args.rest);
+  } else if (cmd === "statusline") {
+    args.rest.shift();
+    await cmdStatusline();
   } else {
     console.error(`context: unknown command "${cmd}"\n`);
     console.error(HELP);
@@ -359,7 +365,7 @@ export async function main(argv: string[]) {
   }
 }
 
-async function cmdHook(kind: string) {
+async function cmdHook(kind: string, rest: string[]) {
   const raw = await Bun.stdin.text();
   let input: Record<string, unknown> = {};
   try {
@@ -371,28 +377,29 @@ async function cmdHook(kind: string) {
     const { runHook } = await import("./hooks/user");
     const task = String(input.prompt ?? input.message ?? input.user_prompt ?? "");
     const cwd = String(input.cwd ?? input.workspace ?? process.cwd());
-    await runHook(task, cwd, { exit: true });
+    const sessionId = typeof input.session_id === "string" ? input.session_id : undefined;
+    await runHook(task, cwd, { exit: true, sessionId });
     return;
   }
-  if (kind === "hook-agent") {
-    const { runAgentHook } = await import("./hooks/agent");
-    const usage = input.usage as { input?: number; output?: number; total?: number } | undefined;
-    await runAgentHook(
-      {
-        text: String(input.text ?? input.response ?? input.message ?? ""),
-        usage: usage && {
-          input: Number(usage.input ?? 0),
-          output: Number(usage.output ?? 0),
-          total: Number(usage.total ?? 0),
-        },
-        hook_event_name: typeof input.hook_event_name === "string" ? input.hook_event_name : undefined,
-      },
-      { exit: true },
-    );
+  if (kind === "hook-edit") {
+    const { runEditHook } = await import("./hooks/edit");
+    // --text prints the blast radius alone (plain stdout) for hosts without a
+    // hook-JSON channel (the opencode plugin); the hook shape stays the default.
+    const text = rest.includes("--text");
+    await runEditHook(input as { tool_input?: { file_path?: string; command?: string }; hook_event_name?: string; cwd?: string }, { exit: true, text });
     return;
   }
-  const { SESSION_REMINDER } = await import("./hooks/session");
-  process.stdout.write(SESSION_REMINDER + "\n");
+  const { sessionOrientation } = await import("./hooks/session");
+  const cwd = String(input.cwd ?? input.workspace ?? process.cwd());
+  // JSON hook shape: additionalContext injects into the session on both Claude
+  // Code and Codex SessionStart (both accept hookSpecificOutput JSON)
+  const text = await sessionOrientation(cwd);
+  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: text } }) + "\n");
+}
+
+async function cmdStatusline() {
+  const { main } = await import("./statusline");
+  await main();
 }
 
 if (import.meta.main) {

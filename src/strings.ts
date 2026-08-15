@@ -12,21 +12,21 @@ const STRING_RE = /"([^"\\\n]{3,80})"|'([^'\\\n]{3,80})'|`([^`\\\n]{3,80})`/g;
 const MAX_BODY_LINES = 40;
 
 export async function attachRuntimeStrings(root: string, graph: Graph): Promise<void> {
-  const cache = new Map<string, string>();
-  const readFile = async (f: string): Promise<string> => {
-    let t = cache.get(f);
-    if (t === undefined) {
-      t = await fs.readFile(path.join(root, f), "utf8").catch(() => "");
-      cache.set(f, t);
+  const cache = new Map<string, string[]>();
+  const readFile = async (f: string): Promise<string[]> => {
+    let ls = cache.get(f);
+    if (ls === undefined) {
+      ls = (await fs.readFile(path.join(root, f), "utf8").catch(() => "")).split("\n");
+      cache.set(f, ls);
     }
-    return t;
+    return ls;
   };
   for (const s of graph.symbols) {
     if (s.kind === "import" || s.strings !== undefined) continue; // [] = checked, none found
-    const source = await readFile(s.file);
+    const lines = await readFile(s.file);
     const from = Math.max(0, s.span.sl - 1);
-    const to = Math.min(source.split("\n").length, s.span.el + 2, from + MAX_BODY_LINES);
-    const body = source.split("\n").slice(from, to).join("\n");
+    const to = Math.min(lines.length, s.span.el + 2, from + MAX_BODY_LINES);
+    const body = lines.slice(from, to).join("\n");
     const strings: string[] = [];
     STRING_RE.lastIndex = 0;
     let m: RegExpExecArray | null;

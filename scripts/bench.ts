@@ -69,8 +69,10 @@ function flatCapsule(c: Capsule): Capsule {
 /** Serialized observation per variant. flat/dirmap are Observe capsule
  *  variants (one BUDGET); map and trails are follow-up calls with their own
  *  declared budgets, reported separately — the plan's "separate operations"
- *  contract, measured as the op's own output, not an all-in-one sum. */
-function observationTokens(name: string, capsule: Capsule, b: Awaited<ReturnType<typeof build>>): { tokens: number; mapOut: string; trailOut: string } {
+ *  contract, measured as the op's own output, not an all-in-one sum.
+ *  Computed once per task — the capsule, mapDir output, and trail graph are
+ *  identical across variant names. */
+function observationTokens(capsule: Capsule, b: Awaited<ReturnType<typeof build>>): { flat: number; dirmap: number; map: number; trails: number; trailGraph: ReturnType<typeof follow> | null } {
   const dirmap = estTokens(capsuleToJson(capsule));
   const flat = estTokens(capsuleToJson(flatCapsule(capsule)));
   let mapOut = "";
@@ -78,23 +80,20 @@ function observationTokens(name: string, capsule: Capsule, b: Awaited<ReturnType
     mapOut = mapDir(b, capsule.dirs[0].path).blocks.map((blk) => `${blk.file} ${blk.syms.map((s) => s.name).join(" ")}`).join("\n");
   }
   let trailOut = "";
+  let trailGraph: ReturnType<typeof follow> | null = null;
   if (capsule.hits.length) {
     const hit = capsule.hits[0];
-    trailOut = renderTrails(follow(b, `${hit.file}::${hit.name}::${hit.line}`, "all", 3));
+    trailGraph = follow(b, `${hit.file}::${hit.name}::${hit.line}`, "all", 3);
+    trailOut = renderTrails(trailGraph);
   }
-  if (name === "flat") return { tokens: flat, mapOut, trailOut };
-  if (name === "dirmap") return { tokens: dirmap, mapOut, trailOut };
-  if (name === "map") return { tokens: estTokens(mapOut), mapOut, trailOut };
-  return { tokens: estTokens(trailOut), mapOut, trailOut };
+  return { flat, dirmap, map: estTokens(mapOut), trails: estTokens(trailOut), trailGraph };
 }
 
-async function runTask(task: Task): Promise<TaskRow> {
-  const dir = taskDirs.get(task.repo)!;
-  const b = await build(dir);
-  const bm25 = buildBm25Index(b.graph, b.docs);
+async function runTask(task: Task, b: Awaited<ReturnType<typeof build>>, bm25: ReturnType<typeof buildBm25Index>, dirCards: ReturnType<typeof buildDirCards>): Promise<TaskRow> {
   const changed = new Set(task.changed);
   const hits: RankedHit[] = rankSymbols({ task: task.query, graph: b.graph, changed, explicitFiles: explicitFilesFromTask(task.query, b.files), bm25, docs: b.docs });
   const capsule = assemble({ task: task.query, build: b, hits, budgetTokens: BUDGET, changed });
+  const obs = observationTokens(capsule, b);
 
   const topK = hits.slice(0, task.topK);
   const topFiles = [...new Set(topK.map((h) => h.symbol.file))];
@@ -106,28 +105,24 @@ async function runTask(task: Task): Promise<TaskRow> {
   // the top three"
   const expectedDirs = task.directories ?? [];
   const dirRecall = expectedDirs.length
-    ? expectedDirs.filter((d) => rankDirCards(buildDirCards(b), hits).some((c) => c.path === d || c.path.startsWith(d))).length / expectedDirs.length
+    ? expectedDirs.filter((d) => rankDirCards(dirCards, hits).some((c) => c.path === d || c.path.startsWith(d))).length / expectedDirs.length
     : 1;
 
   let trailRecall = 1;
-  if (task.edges?.length && capsule.hits.length) {
-    const hit = capsule.hits[0];
-    const f = follow(b, `${hit.file}::${hit.name}::${hit.line}`, "all", 3);
+  if (task.edges?.length && capsule.hits.length && obs.trailGraph) {
+    const f = obs.trailGraph;
     const found = (a: string, bName: string) => f.trails.some((t) => t.steps.some((s, i) => i > 0 && s.name === bName && t.steps[i - 1].name === a));
     const expected = task.edges.map(([a, bN]) => (found(a, bN) ? 1 : 0));
     trailRecall = expected.length ? expected.reduce<number>((s, x) => s + x, 0) / expected.length : 1;
   }
 
-  // per-variant serialized tokens: observe variants share BUDGET; map and
-  // trails (follow-up calls) have their own declared budgets
-  const tokens: Record<string, number> = {};
-  const violation: Record<string, boolean> = {};
-  for (const name of ["flat", "dirmap", "map", "trails"]) {
-    const { tokens: n } = observationTokens(name, capsule, b);
-    tokens[name] = n;
-    const cap = name === "map" ? MAP_BUDGET : name === "trails" ? TRAILS_BUDGET : BUDGET;
-    violation[name] = n > cap;
-  }
+  const tokens: Record<string, number> = { flat: obs.flat, dirmap: obs.dirmap, map: obs.map, trails: obs.trails };
+  const violation: Record<string, boolean> = {
+    flat: obs.flat > BUDGET,
+    dirmap: obs.dirmap > BUDGET,
+    map: obs.map > MAP_BUDGET,
+    trails: obs.trails > TRAILS_BUDGET,
+  };
 
   return {
     id: task.id,
@@ -144,8 +139,20 @@ function renderTrails(r: ReturnType<typeof follow>): string {
   return r.trails.map((t) => t.steps.map((s) => s.name).join(" → ")).join("\n");
 }
 
+// build each corpus repo once; tasks sharing a repo reuse the build, the BM25
+// index, and the DirMap cards
+const builds = new Map<string, Awaited<ReturnType<typeof build>>>();
+const bm25s = new Map<string, ReturnType<typeof buildBm25Index>>();
+const dirCards = new Map<string, ReturnType<typeof buildDirCards>>();
+for (const repo of taskDirs.keys()) {
+  const b = await build(taskDirs.get(repo)!);
+  builds.set(repo, b);
+  bm25s.set(repo, buildBm25Index(b.graph, b.docs));
+  dirCards.set(repo, buildDirCards(b));
+}
+
 const rows: TaskRow[] = [];
-for (const t of allTasks) rows.push(await runTask(t));
+for (const t of allTasks) rows.push(await runTask(t, builds.get(t.repo)!, bm25s.get(t.repo)!, dirCards.get(t.repo)!));
 
 console.log(`\nper-task (shared recall: files% / dir% / trail% — tokens flat/dirmap/map/trails — budget):`);
 let regressed = 0;

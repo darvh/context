@@ -3,6 +3,23 @@ import type { DocFact } from "./doc";
 import type { Bm25Index } from "./bm25";
 import { bm25Search } from "./bm25";
 import type { SemanticHit } from "./semantic";
+import {
+  STOP_WORDS,
+  RECENT_WORDS,
+  TEST_INTENT,
+  HISTORY_INTENT,
+  NEG_TESTS,
+  NEG_PRODUCTION,
+  NEG_LEGACY,
+  ONLY_CONFIG,
+  SCOPE_UNDER,
+  WEAK_BASE_SCORE,
+  AUTHORITATIVE_REASONS,
+  GENERIC_TEST,
+  DOC_INTENT,
+  isTestFile,
+  expandIrregular,
+} from "./rules";
 
 /** Split a string into searchable terms: camelCase, snake_case, paths, punctuation. */
 export function terms(s: string): string[] {
@@ -27,18 +44,6 @@ export function terms(s: string): string[] {
   out.delete("");
   return [...out];
 }
-
-// common words carry no retrieval signal; matching code on them drowns real
-// matches in hub files (natural-language doc queries especially)
-export const STOP_WORDS = new Set([
-  "the", "a", "an", "and", "or", "of", "to", "in", "on", "is", "are", "was", "were", "be", "been", "being",
-  "it", "its", "this", "that", "these", "those", "for", "with", "at", "from", "by", "as", "into", "onto",
-  "how", "what", "when", "where", "why", "which", "who", "whom", "whose", "do", "does", "did", "we", "they",
-  "you", "your", "i", "me", "my", "he", "she", "him", "her", "his", "their", "them", "us", "our", "itself",
-  "will", "would", "can", "could", "should", "have", "has", "had", "not", "but", "so", "if", "then", "than",
-  "too", "very", "just", "also", "all", "any", "some", "each", "every", "one", "two", "other", "another",
-  "there", "here", "whereas", "whilst", "upon", "within", "without",
-]);
 
 export function meaningfulTerms(s: string): string[] {
   return terms(s).filter((t) => t.length >= 2 && !STOP_WORDS.has(t));
@@ -99,9 +104,6 @@ export function docSymbol(d: DocFact, line = 1): SymbolFact {
 // match (several distinct query terms in one symbol). Below it, the query is
 // low-confidence and semantic results lead — UNLESS an authoritative low-score
 // signal (recent-change, explicit-file) already pinned the answer.
-const WEAK_BASE_SCORE = 5;
-const AUTHORITATIVE_REASONS = ["explicit-file", "recent-change"];
-
 export type QueryConfidence = "strong" | "weak" | "conflicted" | "empty";
 
 /** The confidence gate between the exact/lexical pass and the semantic lane.
@@ -127,7 +129,6 @@ export function queryConfidence(hits: RankedHit[]): QueryConfidence {
 // present, recent-change applies to every changed file regardless of topical
 // affinity ("what did we change recently"). Without one, change is only a
 // boost on top of a real match, never a ranking reason by itself.
-const RECENT_WORDS = new Set(["recent", "recently", "change", "changed", "changes", "modify", "modified", "uncommitted", "dirty"]);
 
 /** Pick the section of a doc that best matches the task terms, so a semantic
  *  doc hit pinpoints the matching region instead of always defaulting to line
@@ -276,52 +277,6 @@ const WEIGHT: Record<Edge["kind"], number> = {
   contain: 0.6,
   test: 0.5,
 };
-
-// generic test framework scaffolding: evidence, not targets
-const GENERIC_TEST = new Set(["it", "test", "describe", "expect", "beforeeach", "aftereach", "beforeall", "afterall"]);
-
-// negative constraints: explicit scope restrictions parsed from the task text.
-// Applied as penalties before propagation, so excluded scopes never seed.
-const NEG_TESTS = /(?:not|no|excluding|without|ignore)\s+(?:the\s+)?(?:unit\s+)?tests?/i;
-const NEG_PRODUCTION = /\bproduction\b/i;
-const NEG_LEGACY = /without\s+(?:the\s+)?legacy/i;
-const ONLY_CONFIG = /\bonly\s+(?:the\s+)?config/i;
-const SCOPE_UNDER = /\bunder\s+([a-zA-Z0-9_./-]+)/i;
-
-// explicit history intent: gates the git co-change lane (never affects
-// ordinary topical retrieval)
-const HISTORY_INTENT = /\b(why did|when did|history|regression|introduced(?: by)?|co-?changed)\b/i;
-
-// irregular morphology the porter stemmer misses ("kept" -> "keep"):
-// query terms are expanded with their base forms, so "values are lost when
-// it shuts down" can match a repo that says "lose". The vocabulary must
-// exist in the repo — this bridges forms, never inventing terms.
-const IRREGULAR_BASES: Record<string, string> = {
-  kept: "keep", lost: "lose", losing: "lose", wrote: "write", writing: "write",
-  ran: "run", running: "run", made: "make", making: "make", bought: "buy",
-  built: "build", sent: "send", sending: "send", got: "get", getting: "get",
-  found: "find", finding: "find", gave: "give", giving: "give", took: "take",
-  taking: "take", came: "come", coming: "come", went: "go", going: "go",
-  did: "do", doing: "do", had: "have", having: "have", was: "be", were: "be",
-  been: "be", met: "meet", meant: "mean", knew: "know",
-  knowing: "know", threw: "throw", thought: "think", taught: "teach",
-  caught: "catch", brought: "bring", fought: "fight", sought: "seek",
-  held: "hold", told: "tell", sold: "sell", spoke: "speak", broke: "break",
-  chose: "choose", drove: "drive", fell: "fall", felt: "feel", forgot: "forget",
-  grew: "grow", heard: "hear", hid: "hide", led: "lead",
-  left: "leave", lent: "lend", paid: "pay", read: "read", rode: "ride",
-  rang: "ring", rose: "rise", shook: "shake", shone: "shine", shot: "shoot",
-  shut: "shut", sang: "sing", sank: "sink", sat: "sit", slept: "sleep",
-  slid: "slide", spent: "spend", stood: "stand", stole: "steal", stuck: "stick",
-  struck: "strike", swore: "swear", swam: "swim", swung: "swing",
-  tore: "tear", wore: "wear", woke: "wake", won: "win", withdrew: "withdraw",
-};
-
-/** Expand a query term with its irregular base form when one exists. */
-export function expandIrregular(term: string): string[] {
-  const base = IRREGULAR_BASES[term];
-  return base && base !== term ? [term, base] : [term];
-}
 
 /** Repo-driven compound split: an unseparated query token ("treesitter")
  *  that matches nothing is split at every point where BOTH halves exist in
@@ -563,11 +518,16 @@ export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs, c
   }
 
   const out: RankedHit[] = [];
+  // test scaffolding (conftest fixtures, *_test.go, tests/) is evidence, not
+  // an answer: without explicit test/defect/change intent it must not outrank
+  // the real code, so its hits are dampened after propagation.
+  const demoteTests = !TEST_INTENT.test(taskLower) && !recentIntent && !historyIntent && explicitFiles.length === 0;
   for (const s of graph.symbols) {
     const st = state.get(s.id);
     if (!st || st.score <= 0) continue;
-    const conf = s.conf;
-    out.push({ symbol: s, score: st.score, reason: st.reason.slice(0, 4), conf });
+    const score = demoteTests && isTestFile(s.file) ? st.score * 0.6 : st.score;
+    if (score <= 0) continue;
+    out.push({ symbol: s, score, reason: st.reason.slice(0, 4), conf: s.conf });
   }
   out.sort((a, b) => b.score - a.score || a.symbol.file.localeCompare(b.symbol.file) || a.symbol.nameLine - b.symbol.nameLine);
 
@@ -586,7 +546,10 @@ export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs, c
       // 0 — the graph lane stays authoritative. A gated doc is floored at its
       // own coverage in graph-score space (2/term) so BM25's different
       // magnitude can't lose to a weak code match.
-      const pinned = out.some((h) => h.reason.some((r) => AUTHORITATIVE_REASONS.includes(r) || r === "exact-name"));
+      // explicit change/history intent pins the code answer too — a doc must
+      // not outrank "where was this edited" queries
+      const pinned = recentIntent || historyIntent || out.some((h) => h.reason.some((r) => AUTHORITATIVE_REASONS.includes(r) || r === "exact-name"));
+      const docIntent = DOC_INTENT.test(taskLower);
       const maxGraph = out[0]?.score ?? 0;
       const docHits = hits.filter((h) => h.kind === "doc");
       for (const hit of docHits) {
@@ -596,7 +559,17 @@ export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs, c
         const sym = docSymbol(d, sec?.line ?? 1);
         if (seen.has(sym.id)) continue;
         const coverage = [...docTermsFor(d)].filter((x) => tset.has(x)).length;
-        const score = pinned || coverage <= maxCodeMatched ? 0 : Math.min(Math.max(-hit.score, coverage * 2), 10);
+        // a doc that covers MORE query terms than any code symbol IS the
+        // answer: on doc-intent queries it ranks above every graph hit
+        // (maxGraph+1), with the BM25 score as a fractional tiebreak among
+        // qualifying docs. Otherwise it keeps a capped BM25 score below the
+        // code. Gated docs (pinned answer / no coverage edge) append at 0.
+        const gated = pinned || coverage <= maxCodeMatched;
+        const score = gated
+          ? 0
+          : docIntent
+            ? maxGraph + 1 + Math.min(-hit.score, 20) / 100
+            : Math.min(Math.max(-hit.score, coverage * 2), 10);
         out.push({ symbol: sym, score, reason: ["doc-match"], conf: "heuristic" });
         seen.add(sym.id);
       }

@@ -1,6 +1,5 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { build } from "../src/build";
 import { rankSymbols, appendSemanticHits, explicitFilesFromTask, queryConfidence } from "../src/query";
 import { buildBm25Index } from "../src/bm25";
 import { repoKey } from "../src/cache";
@@ -28,7 +27,7 @@ import type { RankedHit } from "../src/query";
  *   bun run eval -- --json out.json   # raw per-task results
  */
 
-import { buildTaskDirs, loadAllTasks, measureRecall, type Task } from "./eval-shared";
+import { buildTaskDirs, loadAllTasks, measureRecall, buildPerRepo, type Task, type RepoBuild } from "./eval-shared";
 
 const BUDGET_TOKENS = 1200;
 
@@ -72,42 +71,39 @@ function percentiles(ms: number[]): { p50: number; p95: number } {
   return { p50: p(0.5), p95: p(0.95) };
 }
 
-async function runVariant(name: string, tasks: Task[], taskDirs: Map<string, string>, hybrid: boolean, semantic: boolean): Promise<VariantResult> {
+async function runVariant(name: string, tasks: Task[], builds: Map<string, RepoBuild>, hybrid: boolean, semantic: boolean): Promise<VariantResult> {
   const results: TaskResult[] = [];
   const cold: number[] = [];
   const warm: number[] = [];
   let indexBytes = 0;
   let cacheHits = 0;
   let parsed = 0;
+  const bm25ByRepo = new Map<string, ReturnType<typeof buildBm25Index>>();
 
   for (const t of tasks) {
-    const dir = taskDirs.get(t.repo)!;
-    const { cachePathFor } = await import("../src/cache");
-    await fs.rm(cachePathFor(dir), { force: true });
-
-    let t0 = performance.now();
-    const b1 = await build(dir);
-    const idx1 = hybrid ? buildBm25Index(b1.graph, b1.docs) : undefined;
-    cold.push(performance.now() - t0);
-
-    t0 = performance.now();
-    const b2 = await build(dir);
-    const idx2 = hybrid ? buildBm25Index(b2.graph, b2.docs) : undefined;
-    warm.push(performance.now() - t0);
-
+    const rb = builds.get(t.repo)!;
+    const b2 = rb.warm;
+    cold.push(rb.coldMs);
+    warm.push(rb.warmMs);
     cacheHits += b2.reused;
-    parsed += b2.parsed + b1.parsed;
+    parsed += b2.parsed + rb.cold.parsed;
+
+    let idx2 = bm25ByRepo.get(t.repo);
+    if (hybrid && !idx2) {
+      idx2 = buildBm25Index(b2.graph, b2.docs);
+      bm25ByRepo.set(t.repo, idx2);
+    }
     if (idx2) indexBytes = Math.max(indexBytes, idx2.sizeBytes);
 
+    const changed = new Set(t.changed);
     let hits: RankedHit[] = rankSymbols({
       task: t.query,
       graph: b2.graph,
-      changed: new Set(t.changed),
+      changed,
       explicitFiles: explicitFilesFromTask(t.query, b2.files),
       bm25: idx2,
       docs: b2.docs,
     });
-    const changed = new Set(t.changed);
     let semanticDirs: { path: string; sim: number }[] | undefined;
     if (semantic && queryConfidence(hits) !== "strong") {
       const sem = await semanticSearch(b2.root, b2.graph, b2.docs, t.query, { repoKey: repoKey(b2.root) });
@@ -233,16 +229,18 @@ function perTask(variants: VariantResult[]) {
 
 const allTasks = await loadAllTasks(useReal);
 const taskDirs = await buildTaskDirs(allTasks, useReal);
+// build each repo once (cold+warm), share across all variants
+const builds = await buildPerRepo(taskDirs);
 
 const variants: VariantResult[] = [];
-const base = await runVariant("baseline (graph+lexical)", allTasks, taskDirs, false, false);
+const base = await runVariant("baseline (graph+lexical)", allTasks, builds, false, false);
 variants.push(base);
 summarize(base);
-const hybrid = await runVariant("hybrid (graph+lexical+bm25)", allTasks, taskDirs, true, false);
+const hybrid = await runVariant("hybrid (graph+lexical+bm25)", allTasks, builds, true, false);
 variants.push(hybrid);
 summarize(hybrid);
 if (useSemantic) {
-  const sem = await runVariant("hybrid (+bm25+semantic)", allTasks, taskDirs, true, true);
+  const sem = await runVariant("hybrid (+bm25+semantic)", allTasks, builds, true, true);
   variants.push(sem);
   summarize(sem);
 }

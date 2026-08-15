@@ -1,7 +1,8 @@
 import { Database } from "bun:sqlite";
 import type { Graph } from "./facts";
 import type { DocFact } from "./doc";
-import { terms, STOP_WORDS } from "./query";
+import { terms } from "./query";
+import { STOP_WORDS } from "./rules";
 
 /**
  * Sparse lexical index over symbol records (name, signature, doc, path) plus

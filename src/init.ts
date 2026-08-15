@@ -21,7 +21,7 @@ export const AGENT_NAMES = TARGETS.map((t) => t.name);
 
 export interface InitResult {
   agent: string;
-  what: string; // skill | hook-user | hook-agent | hooks-config
+  what: string; // skill | hook-user | hook-edit | hooks-config
   dir: string;
   status: Status;
   note?: string;
@@ -77,23 +77,25 @@ async function scriptsDir(): Promise<string> {
 }
 
 // Hook adapters are SELF-HOSTED: the compiled binary serves `hook-user`,
-// `hook-agent`, and `hook-session` subcommands, so hosts spawn the binary
-// itself and no scripts/ sibling directory is needed. Source runs use the
-// checkout scripts via bun.
-async function hookCommands(): Promise<{ user: string; agent: string; session: string }> {
+// `hook-session`, `hook-edit`, and `statusline` subcommands, so
+// hosts spawn the binary itself and no scripts/ sibling directory is needed.
+// Source runs use the checkout scripts via bun.
+async function hookCommands(): Promise<{ user: string; session: string; edit: string; statusline: string }> {
   const standalone = (Bun as unknown as { isStandaloneExecutable?: boolean }).isStandaloneExecutable === true;
   if (standalone) {
     return {
       user: `"${process.execPath}" hook-user`,
-      agent: `"${process.execPath}" hook-agent`,
       session: `"${process.execPath}" hook-session`,
+      edit: `"${process.execPath}" hook-edit`,
+      statusline: `"${process.execPath}" statusline`,
     };
   }
   const scripts = await scriptsDir();
   return {
     user: `bun run ${path.join(scripts, "hook-user.ts")}`,
-    agent: `bun run ${path.join(scripts, "hook-agent.ts")}`,
     session: `bun run ${path.join(scripts, "hook-session.ts")}`,
+    edit: `bun run ${path.join(scripts, "hook-edit.ts")}`,
+    statusline: `bun run ${path.join(scripts, "statusline.ts")}`,
   };
 }
 
@@ -177,7 +179,7 @@ export async function init(opts: InitOptions): Promise<InitResult[]> {
 // hook entries in an event are preserved, our own entries are replaced (so
 // re-init re-points instead of stacking), nothing is written when the file is
 // byte-identical, and unparseable host configs are skipped — never clobbered.
-const OUR_MARKERS = ["hook-user", "hook-agent", "hook-session"];
+const OUR_MARKERS = ["hook-user", "hook-session", "hook-edit"];
 function isOurs(entry: unknown): boolean {
   return OUR_MARKERS.some((m) => JSON.stringify(entry).includes(m));
 }
@@ -194,11 +196,25 @@ function hookGroup(command: string, timeout: number, matcher?: string): object {
   return matcher ? { matcher, hooks: [handler] } : { hooks: [handler] };
 }
 
-/** Apply desired hook groups to a config with the idempotent merge. */
+/** Apply desired hook groups to a config with the idempotent merge. The hooks
+ *  object is rebuilt in canonical order — foreign events first (file order),
+ *  then our managed events in a fixed order — so re-init always writes the
+ *  byte-identical file (a plain in-place merge drifts because JSON key order
+ *  follows first insertion). Stale groups of ours in events we no longer
+ *  manage (e.g. a removed hook adapter) are dropped, never preserved. */
 function applyHookGroups(cfg: any, groups: { event: string; command: string; timeout: number; matcher?: string }[]): void {
-  const hooks = cfg.hooks ?? {};
-  for (const g of groups) hooks[g.event] = mergeHookEvent(hooks[g.event], hookGroup(g.command, g.timeout, g.matcher));
-  cfg.hooks = hooks;
+  const existing = cfg.hooks ?? {};
+  const managed = new Set(groups.map((g) => g.event));
+  const next: any = {};
+  for (const ev of Object.keys(existing)) {
+    if (managed.has(ev)) continue;
+    const foreign = (Array.isArray(existing[ev]) ? existing[ev] : []).filter((e) => !isOurs(e));
+    if (foreign.length) next[ev] = foreign;
+  }
+  for (const g of groups) {
+    next[g.event] = mergeHookEvent(existing[g.event], hookGroup(g.command, g.timeout, g.matcher));
+  }
+  cfg.hooks = next;
 }
 
 /** Load a hooks config file: null when the dir is absent (manual init never
@@ -229,7 +245,7 @@ async function loadHookFile(agent: string, opts: InitOptions, configPath: string
 
 async function installHooks(opts: InitOptions): Promise<InitResult[]> {
   const out: InitResult[] = [];
-  const { user: userHook, agent: agentHook, session: sessionHook } = await hookCommands();
+  const { user: userHook, session: sessionHook, edit: editHook, statusline: statuslineHook } = await hookCommands();
 
   for (const t of TARGETS) {
     if (opts.only.length && !opts.only.includes(t.name)) continue;
@@ -244,8 +260,12 @@ async function installHooks(opts: InitOptions): Promise<InitResult[]> {
       applyHookGroups(cfg, [
         { event: "SessionStart", command: sessionHook, timeout: 8 },
         { event: "UserPromptSubmit", command: userHook, timeout: 15 },
-        { event: "Stop", command: agentHook, timeout: 8 },
+        { event: "PostToolUse", command: editHook, timeout: 10, matcher: "Write|Edit|MultiEdit" },
       ]);
+      // live statusline (graph size, stale badge, session token savings) —
+      // Claude Code is the only supported host with a statusLine channel
+      cfg.statusLine = { type: "command", command: statuslineHook };
+      cfg.subagentStatusLine = { type: "command", command: statuslineHook };
       // headless/subagent runs deny Bash by default; an allowlist entry lets
       // the skill's `context` calls run without a permission prompt
       const allow = Array.isArray(cfg.permissions?.allow) ? [...cfg.permissions.allow] : [];
@@ -255,7 +275,6 @@ async function installHooks(opts: InitOptions): Promise<InitResult[]> {
       cfg.permissions = { ...(cfg.permissions ?? {}), allow };
       await writeJsonIfChanged(t.name, settingsPath, cfg, existed, out, opts.dryRun);
       out.push({ agent: t.name, what: "hook-user", dir: userHook, status: "installed" });
-      out.push({ agent: t.name, what: "hook-agent", dir: agentHook, status: "installed" });
     } else if (t.name === "opencode") {
       // opencode has no prompt-injection hook; the compaction hook keeps the
       // context capsule alive across session compaction. Plugin file, not a
@@ -267,6 +286,7 @@ async function installHooks(opts: InitOptions): Promise<InitResult[]> {
   const capture = (text) => {
     if (text && text.trim().length >= 40) lastTask = text.trim();
   };
+  const EDIT_TOOLS = ["edit", "write", "apply_patch"];
   return {
     event: async ({ event }) => {
       try {
@@ -274,6 +294,23 @@ async function installHooks(opts: InitOptions): Promise<InitResult[]> {
         const text = msg?.text ?? msg?.content ?? (typeof msg === "string" ? msg : "");
         if (Array.isArray(text)) text.forEach(capture);
         else capture(text);
+      } catch {}
+    },
+    "tool.execute.after": async (input, output) => {
+      try {
+        const tool = String(input?.tool ?? "");
+        if (!EDIT_TOOLS.includes(tool) || !directory) return;
+        const args = output?.args ?? {};
+        // opencode: edit/write carry filePath; apply_patch carries marker lines
+        // in patchText (docs: check "apply_patch", not "patch")
+        let file = args.filePath ?? args.path ?? args.file_path ?? null;
+        if (!file && tool === "apply_patch" && args.patchText && typeof args.patchText === "string") {
+          file = args.patchText.match(/^\\*\\*\\*\\s+(?:Add|Update)\\s+File:\\s+(.+)$/m)?.[1] ?? null;
+        }
+        if (!file) return;
+        const br = await $\`context hook-edit --text\`.input(JSON.stringify({ file_path: file, cwd: directory })).text();
+        const txt = br?.trim?.();
+        if (txt) output.output = output.output ? output.output + "\\n\\n" + txt : txt;
       } catch {}
     },
     "experimental.session.compacting": async (input, output) => {
@@ -312,15 +349,14 @@ expand with: context expand \${c.hits?.[0]?.handle ?? ""}\`);
       if (!loaded) continue;
       const { cfg, existed } = loaded;
       // matcher only where Codex honors it; SessionStart re-orients after
-      // startup, resume, and compaction
+      // startup, resume, and compaction; PostToolUse fires on edits (apply_patch)
       applyHookGroups(cfg, [
         { event: "SessionStart", command: sessionHook, timeout: 10, matcher: "startup|resume|compact" },
         { event: "UserPromptSubmit", command: userHook, timeout: 15 },
-        { event: "Stop", command: agentHook, timeout: 10 },
+        { event: "PostToolUse", command: editHook, timeout: 10, matcher: "apply_patch|Edit|Write" },
       ]);
       await writeJsonIfChanged(t.name, hooksPath, cfg, existed, out, opts.dryRun);
       out.push({ agent: t.name, what: "hook-user", dir: userHook, status: "installed" });
-      out.push({ agent: t.name, what: "hook-agent", dir: agentHook, status: "installed" });
     } else {
       out.push({ agent: t.name, what: "hooks-config", dir: "", status: "unselected", note: "hook wiring not shipped for this host yet" });
     }

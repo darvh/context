@@ -1,5 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { build } from "../src/build";
+import { cachePathFor } from "../src/cache";
 
 /** Shared eval corpus machinery: task shape, pinned-corpus loading, and
  *  real-repo cloning. Used by scripts/eval.ts (regression gate) and
@@ -84,6 +86,34 @@ export function measureRecall<T extends { symbol: { file: string; name: string }
     mrr: rr ? 1 / rr : 0,
     topFiles,
   };
+}
+
+export interface RepoBuild {
+  dir: string;
+  cold: Awaited<ReturnType<typeof build>>;
+  warm: Awaited<ReturnType<typeof build>>;
+  coldMs: number;
+  warmMs: number;
+}
+
+/** Build each corpus repo once (cache deleted first, then cold+warm). Tasks
+ *  sharing a repo reuse the build — the eval measures retrieval, not build
+ *  repetition. All variants share the same builds: the build is
+ *  variant-independent (baseline/hybrid/semantic differ only post-build). */
+export async function buildPerRepo(taskDirs: Map<string, string>): Promise<Map<string, RepoBuild>> {
+  const out = new Map<string, RepoBuild>();
+  for (const repo of taskDirs.keys()) {
+    const dir = taskDirs.get(repo)!;
+    await fs.rm(cachePathFor(dir), { force: true });
+    let t0 = performance.now();
+    const cold = await build(dir);
+    const coldMs = performance.now() - t0;
+    t0 = performance.now();
+    const warm = await build(dir);
+    const warmMs = performance.now() - t0;
+    out.set(repo, { dir, cold, warm, coldMs, warmMs });
+  }
+  return out;
 }
 
 /** Clone pinned real repos into var/real-eval at fixed revisions (idempotent:
