@@ -129,7 +129,7 @@ these correctness and compression problems are fixed.
   whole section that matched, with the section ordinal and heading in the hit
   sig. Cache schema bumped to `context-cache-v7` for the new section shape.
 - Release-gate checks on this host: (1) observe output within budget —
-  verified, 0/19 eval violations; (2) dirty files do not displace
+  verified, 0/20 eval violations; (2) dirty files do not displace
   neighborhoods — verified, dirty-tree tasks 100%; (3) reproducible on pinned
   real tasks — `bun run eval -- real` green: all path/symbol/change tasks
   100%, no regression on any of the 31 tasks, and the hybrid lane recovers
@@ -139,6 +139,25 @@ these correctness and compression problems are fixed.
   misses on real repos (express json sym, flask cookies/routes) are unchanged
   across variants. (9) Paired agent tasks still need a real-host harness —
   the only external step left.
+- Semantic retrieval pipeline implemented on top of the (opt-in) local
+  embedding lane, per the staging: exact/lexical → confidence gate → semantic
+  directory candidates → local symbol/section candidates → rank fusion →
+  bounded graph expansion. `queryConfidence(hits)` is the gate: strong lexical
+  or authoritative signals short-circuit semantic entirely (no embedding cost
+  for good queries); weak/empty queries consult the lane. Directory records
+  (path + public surface + lang) are embedded alongside symbols/docs and lead
+  the DirMap only when the gate is weak (`mergeSemanticDirs`). Verified
+  end-to-end: a zero-term paraphrase query surfaces `Set/Close/Get/Store` with
+  `[semantic]` reasons and `internal/session` in the DirMap, where the
+  lexical-only pass returns test scaffolding. `SemanticResult` now returns
+  `{ symbols, dirs }`; the stale duplicate interface in query.ts removed.
+- Converted-doc Pinpoint fixed: `context expand` on a doc hit returns the
+  cached extracted Markdown section (start/end line, whole section) instead of
+  reading binary PDF/DOCX bytes as text (`expandDocSection`, fails open to the
+  raw file read). Pinned with the `g-doc-1` eval task over a real anydoc
+  conversion (`spike/fixtures/go/docs/archiver-policy.rtf`) — hybrid lane
+  recalls it 100%; the graph-only baseline cannot (docs surface via BM25 by
+  design).
 ## Observation contract
 
 `observe(task, budget)` should produce a bounded capsule containing:

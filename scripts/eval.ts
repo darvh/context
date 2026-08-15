@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { build } from "../src/build";
-import { rankSymbols, appendSemanticHits, explicitFilesFromTask } from "../src/query";
+import { rankSymbols, appendSemanticHits, explicitFilesFromTask, queryConfidence } from "../src/query";
 import { buildBm25Index } from "../src/bm25";
 import { repoKey } from "../src/cache";
 import { semanticEnabled, semanticSearch } from "../src/semantic";
@@ -105,16 +105,17 @@ async function runVariant(name: string, tasks: Task[], taskDirs: Map<string, str
       docs: b2.docs,
     });
     const changed = new Set(t.changed);
-    if (semantic) {
-      const cap = assemble({ task: t.query, build: b2, hits, budgetTokens: BUDGET_TOKENS, changed });
-      if (cap.unresolvedTerms.length > 0) {
-        const sem = await semanticSearch(b2.root, b2.graph, b2.docs, t.query, { repoKey: repoKey(b2.root) });
-        if (sem?.length) hits = appendSemanticHits(hits, sem, b2.graph, b2.docs);
+    let semanticDirs: { path: string; sim: number }[] | undefined;
+    if (semantic && queryConfidence(hits) !== "strong") {
+      const sem = await semanticSearch(b2.root, b2.graph, b2.docs, t.query, { repoKey: repoKey(b2.root) });
+      if (sem) {
+        if (sem.symbols.length) hits = appendSemanticHits(hits, sem.symbols, b2.graph, b2.docs);
+        semanticDirs = sem.dirs;
       }
     }
 
     // budget compliance: the capsule must serialize within the declared budget
-    const capsule = assemble({ task: t.query, build: b2, hits, budgetTokens: BUDGET_TOKENS, changed });
+    const capsule = assemble({ task: t.query, build: b2, hits, budgetTokens: BUDGET_TOKENS, changed, semanticDirs });
     const outputTokens = estTokens(capsuleToJson(capsule));
     const budgetViolation = outputTokens > BUDGET_TOKENS;
 

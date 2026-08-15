@@ -3,7 +3,8 @@ import { meaningfulTerms } from "./query";
 import type { BuildResult } from "./build";
 import { estTokens } from "./tokens";
 import { serializedCost } from "./render";
-import { buildDirCards, rankDirCards, type DirCard } from "./dirmap";
+import { buildDirCards, rankDirCards, mergeSemanticDirs, type DirCard } from "./dirmap";
+import type { SemanticDirHit } from "./semantic";
 
 export interface CapsuleHit {
   handle: string;
@@ -43,9 +44,12 @@ export interface AssembleOpts {
   hits: RankedHit[];
   budgetTokens: number;
   changed?: Set<string> | string[];
+  /** semantic directory candidates from the weak-confidence lane; when
+   *  present they lead the DirMap (fusion after the confidence gate) */
+  semanticDirs?: SemanticDirHit[];
 }
 
-export function assemble({ task, build, hits, budgetTokens, changed }: AssembleOpts): Capsule {
+export function assemble({ task, build, hits, budgetTokens, changed, semanticDirs }: AssembleOpts): Capsule {
   const t = meaningfulTerms(task);
   const hitTerms = hits.map((h) => new Set(meaningfulTerms(h.symbol.name + " " + h.symbol.sig)));
   const unresolvedTerms = t.filter((term) => {
@@ -85,8 +89,10 @@ export function assemble({ task, build, hits, budgetTokens, changed }: AssembleO
 
   const changedList = [...(changed ?? [])].sort().slice(0, CHANGED_MAX);
 
-  // DirMap L0: compact directory cards ranked by task affinity, not symbol count
-  const dirs = rankDirCards(buildDirCards(build), hits);
+  // DirMap L0: compact directory cards ranked by task affinity, never symbol
+  // count; semantic candidates lead only when the confidence gate was weak
+  const cards = buildDirCards(build);
+  const dirs = semanticDirs?.length ? mergeSemanticDirs(cards, rankDirCards(cards, hits), semanticDirs) : rankDirCards(cards, hits);
 
   // the truthfulness contract: selection is measured on the final serialized
   // form (both renderings), not an approximation of the selected labels.

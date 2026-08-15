@@ -73,3 +73,26 @@ export function renderDirCard(c: DirCard): string {
   if (c.entryPoints.length) lines.push(`    entry: ${c.entryPoints.join(", ")}`);
   return lines.join("\n");
 }
+
+/** Fuse semantic directory candidates into the affinity ranking: semantic
+ *  dirs lead (by sim), then the affinity remainder fills up to CARD_MAX. Only
+ *  called when the confidence gate says the lexical pass was weak — a strong
+ *  pass keeps the pure affinity order. Deterministic: ties break by path. */
+export function mergeSemanticDirs(cards: Map<string, DirCard>, affinity: DirCard[], semDirs: { path: string; sim: number }[]): DirCard[] {
+  const seen = new Set<string>();
+  const out: DirCard[] = [];
+  for (const d of [...semDirs].sort((a, b) => b.sim - a.sim || a.path.localeCompare(b.path))) {
+    const c = cards.get(d.path);
+    if (!c || seen.has(c.path)) continue;
+    seen.add(c.path);
+    out.push(c);
+    if (out.length >= CARD_MAX) return out;
+  }
+  for (const c of affinity) {
+    if (seen.has(c.path)) continue;
+    seen.add(c.path);
+    out.push(c);
+    if (out.length >= CARD_MAX) return out;
+  }
+  return out;
+}

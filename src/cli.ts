@@ -1,6 +1,6 @@
 import path from "node:path";
 import { build } from "./build";
-import { rankSymbols, explicitFilesFromTask } from "./query";
+import { rankSymbols, explicitFilesFromTask, queryConfidence } from "./query";
 import { assemble, type Capsule } from "./assemble";
 import { renderCapsule, capsuleToJson } from "./render";
 import { resolveExpand, renderExpanded } from "./expand";
@@ -77,11 +77,11 @@ async function cmdPrepare(args: Args) {
   const bm25 = b.graph.symbols.length || b.docs.length ? buildBm25Index(b.graph, b.docs) : undefined;
   let hits = rankSymbols({ task, graph: b.graph, changed, explicitFiles: explicit, bm25, docs: b.docs });
 
-  // optional semantic fallback (CONTEXT_SEMANTIC=1 or `context config set semantic on`):
-  // only for queries the lexical+graph pass leaves unresolved; appended below
-  // authoritative hits. Covers docs as well as code symbols.
-  let capsule = assemble({ task, build: b, hits, budgetTokens: args.budget, changed });
-  if (capsule.unresolvedTerms.length > 0) {
+  // pipeline: exact/lexical -> confidence gate -> semantic lane (opt-in).
+  // The gate decides whether semantic candidates are consulted at all: a
+  // strong lexical pass never pays the embedding cost.
+  let semanticDirs: { path: string; sim: number }[] | undefined;
+  if (queryConfidence(hits) !== "strong") {
     const { semanticEnabled, semanticSearch } = await import("./semantic");
     if (await semanticEnabled()) {
       if (runtimeKind() === "compiled") {
@@ -91,11 +91,14 @@ async function cmdPrepare(args: Args) {
         console.error("context: semantic fallback unavailable in the compiled runtime (embedding runtime not bundled); use the Bun source entrypoint or unset semantic");
       } else {
         const sem = await semanticSearch(b.root, b.graph, b.docs, task, { repoKey: repoKey(b.root) });
-        if (sem?.length) hits = appendSemanticHits(hits, sem, b.graph, b.docs);
-        capsule = assemble({ task, build: b, hits, budgetTokens: args.budget, changed });
+        if (sem) {
+          if (sem.symbols.length) hits = appendSemanticHits(hits, sem.symbols, b.graph, b.docs);
+          semanticDirs = sem.dirs;
+        }
       }
     }
   }
+  const capsule = assemble({ task, build: b, hits, budgetTokens: args.budget, changed, semanticDirs });
   try {
     await writeJson(lastCapsulePath(b.repoRoot), capsule);
   } catch {

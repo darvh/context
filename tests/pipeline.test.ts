@@ -3,7 +3,7 @@ import { build } from "../src/build";
 import { rankSymbols } from "../src/query";
 import { buildBm25Index } from "../src/bm25";
 import { assemble } from "../src/assemble";
-import { expandFromCapsule, renderExpanded, resolveExpand } from "../src/expand";
+import { expandFromCapsule, renderExpanded, resolveExpand, expandDocSection } from "../src/expand";
 import { impact, renderImpact } from "../src/impact";
 import { loadCache } from "../src/cache";
 import { promises as fs } from "node:fs";
@@ -38,6 +38,14 @@ describe("expand", () => {
   test("rejects file:line paths outside the requested root", async () => {
     const e = await resolveExpand(GO, "/etc/hosts:1");
     expect(e).toBeNull();
+  });
+
+  test("doc hits expand to the cached extracted section, not raw bytes", async () => {
+    const root = path.join(import.meta.dir, "..", "spike", "fixtures", "go");
+    const e = await expandDocSection(root, "docs/archiver-policy.rtf", 3);
+    expect(e).not.toBeNull();
+    expect(e!.lines.join("\n")).toContain("cold storage"); // extracted markdown, not mojibake
+    expect(e!.fromLine).toBe(3);
   });
 });
 

@@ -23,6 +23,22 @@ export async function expandFromCapsule(capsule: Capsule | null, handle: string)
   return expandFile(abs, hit.line);
 }
 
+/** Expand a doc hit from the cached extracted Markdown (the section that
+ *  matched), never by reading a binary PDF/DOCX as text. Fails open to the
+ *  raw file read when the extracted record is unavailable. */
+export async function expandDocSection(root: string, file: string, line: number): Promise<Expanded | null> {
+  try {
+    const { build } = await import("./build");
+    const b = await build(root);
+    const d = b.docs.find((x) => x.file === file);
+    const sec = d?.sections.find((s) => line >= s.line && line <= s.endLine) ?? d?.sections.find((s) => s.line === line);
+    if (d && sec) {
+      return { file, fromLine: sec.line, toLine: sec.endLine, lines: sec.text.split("\n") };
+    }
+  } catch {}
+  return expandFile(path.resolve(root, file), line);
+}
+
 async function expandSpan(file: string, startLine: number, endLine: number): Promise<Expanded | null> {
   try {
     const all = (await fs.readFile(file, "utf8")).split("\n");
@@ -60,5 +76,7 @@ export async function resolveExpand(root: string, handle: string): Promise<Expan
     return expandFile(p, Number(loc[2]));
   }
   const capsule = await readJson<Capsule>(lastCapsulePath(root));
+  const hit = capsule?.hits.find((h) => h.handle === handle);
+  if (hit?.kind === "doc") return expandDocSection(capsule!.root, hit.file, hit.line);
   return expandFromCapsule(capsule, handle);
 }

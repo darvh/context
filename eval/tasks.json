@@ -328,6 +328,19 @@
       "expectedSymbols": [],
       "changed": [],
       "why": "budget: a verbose query with many hits must still serialize within the declared budget"
+    },
+    {
+      "id": "g-doc-1",
+      "repo": "go",
+      "query": "where is cold storage retention configured",
+      "type": "doc",
+      "topK": 5,
+      "expectedFiles": [
+        "docs/archiver-policy.rtf"
+      ],
+      "expectedSymbols": [],
+      "changed": [],
+      "why": "doc lane: an anydoc-converted office file must surface via its extracted sections"
     }
   ]
 }

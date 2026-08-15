@@ -2,6 +2,7 @@ import type { Graph, SymbolFact, Edge } from "./facts";
 import type { DocFact } from "./doc";
 import type { Bm25Index } from "./bm25";
 import { bm25Search } from "./bm25";
+import type { SemanticHit } from "./semantic";
 
 /** Split a string into searchable terms: camelCase, snake_case, paths, punctuation. */
 export function terms(s: string): string[] {
@@ -91,17 +92,26 @@ export function docSymbol(d: DocFact, line = 1): SymbolFact {
   };
 }
 
-export interface SemanticResult {
-  id: string; // symbol id, or `doc::<file>` for a doc hit
-  sim: number;
-}
-
 // a base (graph+lexical) hit at or above this score is a genuine lexical
 // match (several distinct query terms in one symbol). Below it, the query is
 // low-confidence and semantic results lead — UNLESS an authoritative low-score
 // signal (recent-change, explicit-file) already pinned the answer.
 const WEAK_BASE_SCORE = 5;
 const AUTHORITATIVE_REASONS = ["explicit-file", "recent-change"];
+
+export type QueryConfidence = "strong" | "weak" | "empty";
+
+/** The confidence gate between the exact/lexical pass and the semantic lane.
+ *  strong: a genuine lexical match or an authoritative signal pinned the
+ *  answer — semantic adds nothing. weak: hits exist but no confident match.
+ *  empty: nothing matched. The gate decides whether semantic candidates are
+ *  consulted at all, so a good lexical pass never pays the embedding cost. */
+export function queryConfidence(hits: RankedHit[]): QueryConfidence {
+  if (!hits.length) return "empty";
+  const maxBase = hits[0]?.score ?? 0;
+  const authoritative = hits.some((h) => h.reason.some((r) => AUTHORITATIVE_REASONS.includes(r) || r === "exact-name"));
+  return maxBase >= WEAK_BASE_SCORE || authoritative ? "strong" : "weak";
+}
 
 // words that make a query explicitly about recent working-tree changes; when
 // present, recent-change applies to every changed file regardless of topical
@@ -116,7 +126,7 @@ const RECENT_WORDS = new Set(["recent", "recently", "change", "changed", "change
  * lexical has a genuine match or an authoritative signal, semantic appends
  * below it (graph stays authoritative).
  */
-export function appendSemanticHits(hits: RankedHit[], sem: SemanticResult[], graph: Graph, docs: DocFact[]): RankedHit[] {
+export function appendSemanticHits(hits: RankedHit[], sem: SemanticHit[], graph: Graph, docs: DocFact[]): RankedHit[] {
   const seen = new Set(hits.map((h) => h.symbol.id));
   const byId = new Map(graph.symbols.map((s) => [s.id, s]));
   const docById = new Map(docs.map((d) => [d.file, d]));
@@ -128,12 +138,23 @@ export function appendSemanticHits(hits: RankedHit[], sem: SemanticResult[], gra
   // its sim position instead of sinking below newer semantic noise (seen
   // hits are deduped out of the append loop, so without this the correct
   // base hit loses to semantically-weaker docs)
-  if (weak && hits.length > 0) {
-    const simById = new Map(sem.map((s) => [s.id, s.sim]));
-    out = hits.map((h) => {
+  const simById = new Map(sem.map((s) => [s.id, s.sim]));
+  if (simById.size && weak && hits.length > 0) {
+    out = out.map((h) => {
       const sim = simById.get(h.symbol.id);
       if (sim === undefined) return h;
       return { ...h, score: maxBase + sim, reason: [...h.reason, "semantic"] };
+    });
+  } else if (simById.size && !weak) {
+    // hybrid fusion: on a strong base, a BM25-appended (score-0) tail hit
+    // semantics independently confirms is lifted by sim (bounded by the
+    // MIN_SIM floor, stays below WEAK_BASE_SCORE) — two retrievers agreeing
+    // beats either alone, without cosine reordering authoritative graph hits
+    out = out.map((h) => {
+      if (!h.reason.includes("bm25")) return h;
+      const sim = simById.get(h.symbol.id);
+      if (sim === undefined) return h;
+      return { ...h, score: h.score + sim, reason: [...h.reason, "semantic"] };
     });
   }
   for (const h of sem) {

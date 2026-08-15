@@ -5,6 +5,7 @@ import type { Graph, Span } from "./facts";
 import type { DocFact } from "./doc";
 import { cacheDir, atomicWrite } from "./cache";
 import { withTimeout } from "./async";
+import { meaningfulTerms } from "./query";
 
 /**
  * Optional local semantic fallback (plan Phase 5). Explicitly opt-in via
@@ -41,7 +42,10 @@ const MAX_SNIPPET_LINES = 20;
 const MIN_SIM = 0.2;
 const EMBED_TIMEOUT_MS = 60_000; // per batch; expiry fails the lane, never hangs the command
 
-const DEFAULT_MODEL = "Xenova/all-MiniLM-L6-v2";
+// code-tuned: trained on code+docs pairs, beats MiniLM on identifier-heavy
+// queries. Falls back to lexical/graph on load failure, so a failed 160MB
+// download degrades gracefully. Override with CONTEXT_MODEL.
+const DEFAULT_MODEL = "Xenova/jina-embeddings-v2-base-code";
 
 /** Env wins over config, config over default. Cached per process. */
 let modelMemo: string | null = null;
@@ -64,6 +68,7 @@ const QUERY_PREFIX: Record<string, string> = {
   "Xenova/bge-small-en-v1.5": "Represent this sentence for searching relevant passages: ",
   "Xenova/bge-base-en-v1.5": "Represent this sentence for searching relevant passages: ",
   "jinaai/jina-embeddings-v2-base-code": "Given a web search query, retrieve relevant passages that answer the query: ",
+  "Xenova/jina-embeddings-v2-base-code": "Given a web search query, retrieve relevant passages that answer the query: ",
 };
 
 function queryFor(model: string, task: string): string {
@@ -103,6 +108,16 @@ function loadPipeline(): Promise<Pipe | null> {
 export interface SemanticHit {
   id: string;
   sim: number;
+}
+
+export interface SemanticDirHit {
+  path: string;
+  sim: number;
+}
+
+export interface SemanticResult {
+  symbols: SemanticHit[];
+  dirs: SemanticDirHit[];
 }
 
 async function snippet(fileText: string, span: Span): Promise<string> {
@@ -213,42 +228,75 @@ async function embedSymbols(
   return hashes.map((h) => store.get(h)!);
 }
 
-/** Top symbols + docs by cosine similarity to the task; null on failure (fail open). */
+/** Top symbols + docs + directories by cosine similarity to the task; null on
+ *  failure (fail open). Directory records are aggregates (path + public
+ *  surface + lang) so a weak lexical pass still finds the right neighborhood. */
 export async function semanticSearch(
   root: string,
   graph: Graph,
   docs: DocFact[],
   task: string,
   opts: { repoKey: string },
-): Promise<SemanticHit[] | null> {
+): Promise<SemanticResult | null> {
   const p = await loadPipeline();
   if (!p) return null;
   try {
     const model = await modelName();
-    const qv = await p([queryFor(model, task)], { pooling: POOLING, normalize: true });
+    // multi-query: the raw task phrasing plus its expanded keyword form.
+    // Natural-language tasks and code tokens live in different regions of the
+    // embedding space; averaging both query vectors retrieves both.
+    const kw = meaningfulTerms(task).slice(0, 8).join(" ");
+    const qTexts = kw && kw !== task.toLowerCase() ? [queryFor(model, task), queryFor(model, kw)] : [queryFor(model, task)];
+    const qv = await p(qTexts, { pooling: POOLING, normalize: true });
     const dim = qv.dims[qv.dims.length - 1];
-    const q = qv.data.slice(0, dim);
+    const q = new Float32Array(dim);
+    for (let i = 0; i < qv.data.length; i += dim) for (let j = 0; j < dim; j++) q[j] += qv.data[i + j];
+    let nrm = 0;
+    for (let j = 0; j < dim; j++) nrm += q[j] * q[j];
+    nrm = Math.sqrt(nrm) || 1;
+    for (let j = 0; j < dim; j++) q[j] /= nrm;
     // imports are structural, not semantic: excluded. Docs embed their full
     // text (section-level was benchmarked and regressed recall — isolated
     // sections score below the sim floor and extra targets dilute the top-10).
-    const targets = [
+    const symbolTargets = [
       ...graph.symbols
         .filter((s) => s.kind !== "import")
         .map((s) => ({ id: s.id, span: s.span as Span, file: s.file, text: `${s.name} ${s.sig} ${s.doc} ${s.file}` })),
       ...docs.map((d) => ({ id: `doc::${d.file}`, file: d.file, text: d.text })),
     ];
-    const vecs = await embedSymbols(p, root, targets, opts.repoKey, dim);
-    const ranked = targets
-      .map((t, i) => {
-        let dot = 0;
-        for (let j = 0; j < dim; j++) dot += vecs[i][j] * q[j];
-        return { id: t.id, sim: dot };
-      })
+    const dirTargets = dirRecords(graph).map((d) => ({ id: `dir::${d.path}`, file: d.path, text: d.text }));
+    const all = [...symbolTargets, ...dirTargets];
+    const vecs = await embedSymbols(p, root, all, opts.repoKey, dim);
+    const sims = vecs.map((v) => {
+      let dot = 0;
+      for (let j = 0; j < dim; j++) dot += v[j] * q[j];
+      return dot;
+    });
+    const ranked = all
+      .map((t, i) => ({ id: t.id, sim: sims[i] }))
       .filter((h) => h.sim >= MIN_SIM)
-      .sort((a, b) => b.sim - a.sim)
-      .slice(0, 10);
-    return ranked.length ? ranked : null;
+      .sort((a, b) => b.sim - a.sim);
+    const symbols: SemanticHit[] = ranked.filter((h) => !h.id.startsWith("dir::")).slice(0, 10).map((h) => ({ id: h.id, sim: h.sim }));
+    const dirs: SemanticDirHit[] = ranked.filter((h) => h.id.startsWith("dir::")).slice(0, 3).map((h) => ({ path: h.id.slice(5), sim: h.sim }));
+    const out: SemanticResult = { symbols, dirs };
+    return out.symbols.length || out.dirs.length ? out : null;
   } catch {
     return null;
   }
+}
+
+/** Directory aggregate records for embedding: path + public surface + lang. */
+function dirRecords(graph: Graph): { path: string; text: string }[] {
+  const byDir = new Map<string, { surface: string[]; lang: string }>();
+  for (const s of graph.symbols) {
+    if (s.kind === "import") continue;
+    const i = s.file.lastIndexOf("/");
+    const dir = i > 0 ? s.file.slice(0, i) : ".";
+    const rec = byDir.get(dir) ?? { surface: [], lang: s.file.split(".").pop() ?? "" };
+    if (s.exported && rec.surface.length < 5) rec.surface.push(s.name);
+    byDir.set(dir, rec);
+  }
+  return [...byDir.entries()]
+    .map(([path, r]) => ({ path, text: `directory ${path} ${r.lang}: ${r.surface.join(", ")}` }))
+    .sort((a, b) => a.path.localeCompare(b.path));
 }
