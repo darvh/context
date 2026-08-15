@@ -5,30 +5,43 @@ description: Deterministic repository discovery for coding agents. Use before no
 
 # Context skill
 
-Host-neutral. One call at the start of non-trivial repository work.
+One `context observe` call replaces repetitive searching. Output is navigation
+only — source, Git, and tests are authoritative.
 
-## Usage
+## When to call (once, before exploration)
 
-1. Run `context observe "<user task>"` (alias: `prepare`) before non-trivial repository discovery.
-2. Start from the capsule instead of repeating its searches and reads. The capsule shows the top directories (DirMap), relevant files, and hits with source ranges.
-3. Use `context map <directory>` when a neighborhood needs a local file-level map.
-4. Use `context follow <symbol> <edge>` when a graph trail matters more than a score.
-5. Use `context impact <symbol>` for callers, tests, and the working-tree diff.
-6. Expand only named handles with `context expand <handle>` (or `context expand <file:line>`).
-7. Fall back to normal repository tools when Context has weak or empty results.
-8. Treat output as navigation, not evidence. Source, Git, build output, and tests are authoritative.
+| Task | Call? |
+|---|---|
+| multi-file bug, refactor, or feature | `observe` first |
+| unfamiliar codebase or area | `observe` first |
+| "where is / how does X work" | `observe` |
+| one-file edit, obvious fix | skip |
+| same task after an edit | skip (index refreshes) |
 
-## When not to use
+## How to use the capsule
 
-- Obvious one-file work: skip `prepare`.
-- Do not rerun `prepare` after every edit; the index refreshes on demand.
-- Do not claim token savings without a measured baseline.
+1. `context observe "<task>"` — returns: `directories` (DirMap), `paths`,
+   hits with source ranges, and a `confidence` label.
+2. Start from the capsule. Do not re-search what it already shows.
+3. Drill down only where needed:
 
-## Notes
+   | Command | When |
+   |---|---|
+   | `context map <dir>` | need a file-level map of one directory |
+   | `context follow <symbol> <edge>` | need one-edge-kind trails (call, import, test, ...) |
+   | `context follow <symbol> <symbol2>` | need how two symbols connect |
+   | `context impact <symbol>` | need callers/callees, tests, documented_by, diff |
+   | `context expand <handle\|file:line>` | need the exact source span |
 
-- All results are deterministic and model-free.
-- Working-tree edits (staged, unstaged, untracked) are visible on the next call.
-- `--json` returns the same capsule for machine use.
-- `context impact --diff` lists changed files and dependents.
-- Token-savings projections (`scripts/hook-agent.ts`) are user-visible telemetry,
-  never injected into the model context.
+4. Read `confidence`: `strong` = trust and go; `conflicted` = several
+   competing neighborhoods, pick by reading; `weak`/`empty` = fall back to
+   grep/rg, context could not resolve it.
+
+## Rules
+
+- Never treat output as evidence — read the source it points at.
+- Never rerun `observe` for the same task after edits; the index refreshes on
+  demand.
+- `context impact --diff` lists changed files and their dependents.
+- `--json` returns the same capsule for machine use; all results are
+  deterministic and model-free.

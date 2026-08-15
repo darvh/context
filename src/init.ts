@@ -151,6 +151,7 @@ async function installHooks(opts: InitOptions): Promise<InitResult[]> {
   const scripts = await scriptsDir();
   const userHook = `bun run ${path.join(scripts, "hook-user.ts")}`;
   const agentHook = `bun run ${path.join(scripts, "hook-agent.ts")}`;
+  const sessionHook = `bun run ${path.join(scripts, "hook-session.ts")}`;
 
   for (const t of TARGETS) {
     if (opts.only.length && !opts.only.includes(t.name)) continue;
@@ -169,7 +170,7 @@ async function installHooks(opts: InitOptions): Promise<InitResult[]> {
         cfg = JSON.parse(await fs.readFile(settingsPath, "utf8"));
       } catch {}
       const hooks = cfg.hooks ?? {};
-      if (hooks.UserPromptSubmit || hooks.Stop) {
+      if (hooks.SessionStart || hooks.UserPromptSubmit || hooks.Stop) {
         out.push({ agent: t.name, what: "hooks-config", dir: settingsPath, status: "conflict", note: "existing hooks; use --force to overwrite" });
         if (!opts.force || opts.dryRun) continue;
       }
@@ -177,6 +178,7 @@ async function installHooks(opts: InitOptions): Promise<InitResult[]> {
         out.push({ agent: t.name, what: "hooks-config", dir: settingsPath, status: "updated", note: "dry-run" });
         continue;
       }
+      hooks.SessionStart = sessionHook;
       hooks.UserPromptSubmit = userHook;
       hooks.Stop = agentHook;
       cfg.hooks = hooks;
@@ -247,7 +249,7 @@ expand with: context expand \${c.hits?.[0]?.handle ?? ""}\`);
         cfg = JSON.parse(await fs.readFile(hooksPath, "utf8"));
       } catch {}
       const hooks = cfg.hooks ?? {};
-      if (hooks.UserPromptSubmit || hooks.Stop) {
+      if (hooks.SessionStart || hooks.UserPromptSubmit || hooks.Stop) {
         out.push({ agent: t.name, what: "hooks-config", dir: hooksPath, status: "conflict", note: "existing hooks; use --force to overwrite" });
         if (!opts.force || opts.dryRun) continue;
       }
@@ -255,6 +257,7 @@ expand with: context expand \${c.hits?.[0]?.handle ?? ""}\`);
         out.push({ agent: t.name, what: "hooks-config", dir: hooksPath, status: "updated", note: "dry-run" });
         continue;
       }
+      hooks.SessionStart = [{ hooks: [{ type: "command", command: sessionHook, timeout: 5 }] }];
       hooks.UserPromptSubmit = [{ hooks: [{ type: "command", command: userHook, timeout: 30 }] }];
       hooks.Stop = [{ hooks: [{ type: "command", command: agentHook, timeout: 5 }] }];
       cfg.hooks = hooks;

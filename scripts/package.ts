@@ -18,4 +18,5 @@ await fs.rm(scriptsDest, { recursive: true, force: true });
 await fs.mkdir(scriptsDest, { recursive: true });
 await fs.cp(path.join(root, "scripts", "hook-user.ts"), path.join(scriptsDest, "hook-user.ts"));
 await fs.cp(path.join(root, "scripts", "hook-agent.ts"), path.join(scriptsDest, "hook-agent.ts"));
+await fs.cp(path.join(root, "scripts", "hook-session.ts"), path.join(scriptsDest, "hook-session.ts"));
 console.log(`packaged hook scripts -> ${path.relative(root, scriptsDest)}`);

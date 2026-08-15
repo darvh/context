@@ -32,9 +32,9 @@ usage:
 
 observe (alias: prepare) is orientation: DirMap + neighborhoods + spans.
 map compiles a bounded local RepoMap over one directory. follow walks one edge
-kind from a symbol (callers, callees, tests, inherit, implement, contain, ref,
-import, all) with short trails. impact is the symbol map + diff. expand is
-exact span evidence.
+kind from a symbol (call, import, inherit, implement, ref, contain, test, all)
+with short trails; caller/callee analysis is impact's job. impact is the
+symbol map + diff. expand is exact span evidence.
 
 ignore override:
   --ignore "a,b"   add extra ignore globs (on top of .gitignore + defaults)
