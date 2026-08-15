@@ -72,10 +72,7 @@ async function fileLines(root: string, file: string, cache: Map<string, string[]
 /** One-line Graft-style projection for a hook or status line. */
 export function formatSavings(s: Savings): string {
   const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
-  return (
-    `context: savings [estimated] ~${k(s.savedTokens)} input tokens (${s.savedPct.toFixed(0)}% of ~${k(s.coldTokens)} cold), ` +
-    `net ~${k(s.netTokens)} after ${k(s.capsuleTokens)}-token capsule`
-  );
+  return `context: ~${k(s.savedTokens)} tokens saved (est. ${s.savedPct.toFixed(0)}% of ${k(s.coldTokens)} cold)`;
 }
 
 

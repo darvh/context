@@ -58,6 +58,25 @@ async function skillDir(): Promise<string> {
   return candidates[candidates.length - 1];
 }
 
+// Same resolution for the hook adapters: compiled binaries cannot serve
+// scripts from $bunfs, so the real scripts/ must sit next to the binary
+// (context/dist/context + context/scripts). Source runs use the checkout.
+async function scriptsDir(): Promise<string> {
+  const exe = path.dirname(process.execPath);
+  const candidates = [
+    path.join(exe, "..", "scripts"),
+    path.join(exe, "scripts"),
+    path.join(import.meta.dir ?? "", "..", "scripts"),
+  ];
+  for (const c of candidates) {
+    try {
+      await fs.access(path.join(c, "hook-user.ts"));
+      return c;
+    } catch {}
+  }
+  return candidates[candidates.length - 1];
+}
+
 function resolveAgent(t: (typeof TARGETS)[number], opts: InitOptions): string {
   const base = opts.project ? opts.repo : homedir();
   const rel = (opts.project ? t.project : t.home).replace("~", "");
@@ -129,9 +148,9 @@ export async function init(opts: InitOptions): Promise<InitResult[]> {
 // them (never silently — each host gets an explicit config entry).
 async function installHooks(opts: InitOptions): Promise<InitResult[]> {
   const out: InitResult[] = [];
-  const repo = path.join(import.meta.dir, "..");
-  const userHook = `bun run ${path.join(repo, "scripts", "hook-user.ts")}`;
-  const agentHook = `bun run ${path.join(repo, "scripts", "hook-agent.ts")}`;
+  const scripts = await scriptsDir();
+  const userHook = `bun run ${path.join(scripts, "hook-user.ts")}`;
+  const agentHook = `bun run ${path.join(scripts, "hook-agent.ts")}`;
 
   for (const t of TARGETS) {
     if (opts.only.length && !opts.only.includes(t.name)) continue;

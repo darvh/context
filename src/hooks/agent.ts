@@ -39,7 +39,9 @@ export async function runAgentHook(input: AgentResponseInput, opts: { exit?: boo
     const root = (await findRoot(process.cwd())) ?? process.cwd();
     const state = await readJson<{ key: string; savings?: Savings }>(hookStatePath(root));
     const s = state?.savings;
-    if (s && s.coldTokens > 0) {
+    // only report when there is something to report: a meaningful net saving
+    // (projections of 0% are noise on every turn)
+    if (s && s.coldTokens > 0 && s.savedTokens > 0) {
       out.savings = s;
       out.projection = formatSavings(s);
       if (input.usage) {
@@ -49,8 +51,9 @@ export async function runAgentHook(input: AgentResponseInput, opts: { exit?: boo
   } catch {}
   if (exit) {
     if (isCodex) {
-      // Codex common output fields: systemMessage surfaces as a UI warning
-      process.stdout.write(JSON.stringify({ systemMessage: out.projection ?? "context: no savings projection for this turn" }));
+      // Codex common output fields: systemMessage surfaces as a UI warning.
+      // Empty output = success + silence: no savings, no warning.
+      process.stdout.write(JSON.stringify(out.projection ? { systemMessage: out.projection } : {}));
     } else {
       process.stdout.write(JSON.stringify(out));
     }
