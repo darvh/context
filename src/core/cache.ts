@@ -2,8 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
-import type { FileFacts, Graph } from "../core/facts";
-import type { DocFact } from "../core/doc";
+import type { FileFacts, Graph } from "./facts";
+import type { DocFact } from "./doc";
 
 // Bump CACHE_VERSION whenever extraction/ranking schema semantics change so
 // stale cached facts are ignored and rebuilt.

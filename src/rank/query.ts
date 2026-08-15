@@ -1,8 +1,8 @@
 import type { Graph, SymbolFact, Edge } from "../core/facts";
 import type { DocFact } from "../core/doc";
-import type { Bm25Index } from "../rank/bm25";
-import { bm25Search } from "../rank/bm25";
-import type { SemanticHit } from "../rank/semantic";
+import type { Bm25Index } from "./bm25";
+import { bm25Search } from "./bm25";
+import type { SemanticHit } from "./semantic";
 import {
   STOP_WORDS,
   RECENT_WORDS,

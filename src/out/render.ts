@@ -1,4 +1,4 @@
-import type { Capsule } from "../out/assemble";
+import type { Capsule } from "./assemble";
 import { renderDirCard } from "../graph/dirmap";
 import { estTokens } from "../core/tokens";
 

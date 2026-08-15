@@ -6,7 +6,7 @@ import { atomicWrite, cacheDir } from "../core/cache";
 import type { DocFact } from "../core/doc";
 import { dirOf } from "../graph/dirmap";
 import type { Graph, Span } from "../core/facts";
-import { meaningfulTerms } from "../rank/query";
+import { meaningfulTerms } from "./query";
 
 /**
  * Optional local semantic fallback (plan Phase 5). Explicitly opt-in via
@@ -55,7 +55,7 @@ export async function modelName(): Promise<string> {
   const env = process.env.CONTEXT_MODEL;
   if (env) return (modelMemo = env);
   try {
-    const { readConfig } = await import("./cli/config");
+    const { readConfig } = await import("../cli/config");
     const cfg = await readConfig();
     if (cfg.model) return (modelMemo = cfg.model);
   } catch {}
@@ -81,7 +81,7 @@ export async function semanticEnabled(): Promise<boolean> {
   if (env === "1" || env === "true") return true;
   if (env === "0" || env === "false") return false;
   try {
-    const { readConfig } = await import("./cli/config");
+    const { readConfig } = await import("../cli/config");
     return (await readConfig()).semantic === true;
   } catch {
     return false;

@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { BuildResult } from "../out/build";
-import type { Capsule } from "../out/assemble";
+import type { BuildResult } from "./build";
+import type { Capsule } from "./assemble";
 import { estTokens } from "../core/tokens";
 
 export interface Savings {

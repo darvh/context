@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import type { Graph } from "../core/facts";
 import type { DocFact } from "../core/doc";
-import { terms } from "../rank/query";
+import { terms } from "./query";
 import { STOP_WORDS } from "../core/rules";
 
 /**
