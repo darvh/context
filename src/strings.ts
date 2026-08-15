@@ -22,7 +22,7 @@ export async function attachRuntimeStrings(root: string, graph: Graph): Promise<
     return t;
   };
   for (const s of graph.symbols) {
-    if (s.kind === "import" || s.strings?.length) continue;
+    if (s.kind === "import" || s.strings !== undefined) continue; // [] = checked, none found
     const source = await readFile(s.file);
     const from = Math.max(0, s.span.sl - 1);
     const to = Math.min(source.split("\n").length, s.span.el + 2, from + MAX_BODY_LINES);
@@ -34,6 +34,6 @@ export async function attachRuntimeStrings(root: string, graph: Graph): Promise<
       const lit = (m[1] ?? m[2] ?? m[3]).trim();
       if (lit && !strings.includes(lit)) strings.push(lit);
     }
-    if (strings.length) s.strings = strings;
+    s.strings = strings; // empty = checked and none found
   }
 }

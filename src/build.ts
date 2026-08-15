@@ -75,7 +75,9 @@ export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResu
   }
 
   const t2 = performance.now();
-  let graph = resolveFacts([...fileFacts.values()]);
+  // nothing changed: the cached graph IS the resolved graph — re-running
+  // resolveFacts over every symbol/edge on a warm build is pure waste
+  let graph = toParse.length === 0 && cached ? cached.graph : resolveFacts([...fileFacts.values()]);
   // compiler-backed facts overlay: .context/facts.json (any indexer), then a
   // binary SCIP index (index.scip) when present. Tree-sitter stays the
   // universal fallback — unchanged when no overlay exists.
@@ -83,9 +85,14 @@ export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResu
   if (overlay) graph = mergeOverlay(graph, overlay);
   const scip = await loadScipIndex(s.tree);
   if (scip) graph = mergeOverlay(graph, scip);
-  // typed artifact facts: env vars + config keys as first-class config symbols
-  const artifacts = await extractArtifacts(s.tree, s.files);
-  if (artifacts.length) graph = { ...graph, symbols: [...graph.symbols, ...artifacts] };
+  // typed artifact facts: env vars + config keys as first-class config symbols.
+  // Artifacts live in the cached graph; rescan only when files changed or the
+  // cache predates them (warm builds must not re-read every source file)
+  const hasArtifacts = graph.symbols.some((s) => s.kind === "config" && s.doc === "environment variable");
+  if (!hasArtifacts || toParse.length > 0) {
+    const artifacts = await extractArtifacts(s.tree, s.files);
+    if (artifacts.length) graph = { ...graph, symbols: [...graph.symbols, ...artifacts] };
+  }
   // runtime strings: bounded string literals from each symbol's body, so a
   // query quoting an error/log/config string matches lexically ("connection
   // refused", "listening :8080")
