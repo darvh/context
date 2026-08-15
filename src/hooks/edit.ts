@@ -40,9 +40,9 @@ export function editedFilePath(input: EditInput, root: string): string | null {
 
 /**
  * Who depends on an edited file: symbols defined in it that other files
- * reference/call/test, grouped and capped, with a graft-style preamble.
- * Purely structural (reads the graph), never an LLM call. Returns null when
- * the file defines nothing anyone else uses — a clean no-op.
+ * reference/call/test, grouped and capped. Purely structural (reads the
+ * graph), never an LLM call. Returns null when the file defines nothing
+ * anyone else uses — a clean no-op.
  */
 export function blastRadius(b: BuildResult, relFile: string, cap = 8): string | null {
   const ids = new Set(b.graph.symbols.filter((s) => s.file === relFile).map((s) => s.id));
@@ -53,12 +53,12 @@ export function blastRadius(b: BuildResult, relFile: string, cap = 8): string | 
     if (!ids.has(e.to) || ids.has(e.from)) continue;
     const caller = byId.get(e.from);
     const label = caller ? `${caller.name} (${basename(caller.file)})` : e.name;
-    unique.set(`${e.kind}:${label}`, ` • ${e.kind} ← ${label}`);
+    unique.set(`${e.kind}:${label}`, `  • ${caller ? caller.name : e.name} via ${e.kind} (${basename(caller?.file ?? "")})`);
   }
   if (!unique.size) return null;
   const items = [...unique.values()].slice(0, cap);
-  if (items.length < unique.size) items.push(` • +${unique.size - items.length} more`);
-  return `[context] blast radius for ${basename(relFile)}, who depends on it:\n${items.join("\n")}`;
+  if (items.length < unique.size) items.push(`  … plus ${unique.size - items.length} more`);
+  return `[context] dependents of ${basename(relFile)} — code that can break when you edit it:\n${items.join("\n")}`;
 }
 
 /**

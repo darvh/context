@@ -243,7 +243,24 @@ interface ScoreState {
 // token sets are stable per graph/docs instance: memoize so N queries over one
 // build tokenize each symbol/doc exactly once instead of per query
 const symTermsMemo = new WeakMap<Graph, Map<string, Set<string>>>();
+const fileTermsMemo = new WeakMap<Graph, Map<string, Set<string>>>();
 const docTermsMemo = new WeakMap<DocFact, Set<string>>();
+
+/** Path tokens for a file: identical for every symbol in the file, so compute
+ *  once per file per build instead of once per symbol. */
+function fileTermsFor(s: SymbolFact, graph: Graph): Set<string> {
+  let m = fileTermsMemo.get(graph);
+  if (!m) {
+    m = new Map();
+    fileTermsMemo.set(graph, m);
+  }
+  let t = m.get(s.file);
+  if (!t) {
+    t = new Set(terms(s.file));
+    m.set(s.file, t);
+  }
+  return t;
+}
 
 function symTermsFor(s: SymbolFact, graph: Graph): Set<string> {
   let m = symTermsMemo.get(graph);
@@ -412,7 +429,7 @@ export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs, c
       addReason(s.id, "test-name-pin");
     }
     // path match
-    const fileTerms = new Set(terms(s.file));
+    const fileTerms = fileTermsFor(s, graph);
     let pathMatched = 0;
     for (const term of t) if (fileTerms.has(term)) pathMatched++;
     if (pathMatched > 0) {

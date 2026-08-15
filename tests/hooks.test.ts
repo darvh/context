@@ -76,18 +76,22 @@ describe("user hook", () => {
     await fs.rm(hookStatePath(root), { force: true });
 
     await runHook(`where is session persistence stored? seed ${Date.now()}`, GO, { exit: false, sessionId: "s1" });
-    const s1 = (await readHookState(root)).savings!;
-    expect(s1.savedTokens).toBeGreaterThan(0);
-    const once = (await readHookState(root)).sessions?.["s1"] ?? 0;
-    expect(once).toBe(s1.savedTokens);
+    const first = await readHookState(root);
+    const once = first.sessions?.["s1"] ?? 0;
+    expect(once).toBe(first.savings!.savedTokens);
+    expect(once).toBeGreaterThan(0);
 
-    // a second injection into the same session adds; another session stays apart
+    // a second injection into the same session adds
     await runHook(`who closes the session store? seed ${Date.now()}`, GO, { exit: false, sessionId: "s1" });
+    const second = await readHookState(root);
+    const twice = second.sessions?.["s1"] ?? 0;
+    expect(twice).toBeGreaterThan(once);
+
+    // a different session id starts its own total and leaves s1 untouched
     await runHook(`how does the store test work? seed ${Date.now()}`, GO, { exit: false, sessionId: "s2" });
-    const state = await readHookState(root);
-    const s2 = state.savings!.savedTokens;
-    expect(state.sessions?.["s1"]).toBe(once + s2);
-    expect(state.sessions?.["s2"]).toBe(s2);
+    const final = await readHookState(root);
+    expect(final.sessions?.["s2"]).toBe(final.savings!.savedTokens);
+    expect(final.sessions?.["s1"]).toBe(twice);
   });
 });
 
@@ -103,7 +107,7 @@ describe("post-edit hook (blast radius)", () => {
     const { build } = await import("../src/build");
     const b: BuildResult = await build(GO);
     const br = blastRadius(b, "internal/session/store.go");
-    expect(br).toContain("blast radius for store.go");
+    expect(br).toContain("dependents of store.go");
     expect(br).toContain("NewHandler");
     expect(br).toContain("TestStorePersistsAcrossRestart");
     expect(br).toContain("main");
@@ -118,7 +122,7 @@ describe("post-edit hook (blast radius)", () => {
       { exit: false },
     );
     expect(out.hookSpecificOutput?.hookEventName).toBe("PostToolUse");
-    expect(out.hookSpecificOutput!.additionalContext).toContain("blast radius for store.go");
+    expect(out.hookSpecificOutput!.additionalContext).toContain("dependents of store.go");
     expect(out.hookSpecificOutput!.additionalContext).toContain("main");
     const state = await readHookState(repo);
     expect(state.dirty).toBe(true);
@@ -132,7 +136,7 @@ describe("post-edit hook (blast radius)", () => {
       { tool_input: { command: "*** Update File: internal/session/store.go" }, hook_event_name: "PostToolUse", cwd: repo },
       { exit: false },
     );
-    expect(out.systemMessage).toContain("blast radius");
+    expect(out.systemMessage).toContain("dependents of store.go");
     expect(out.hookSpecificOutput).toBeUndefined();
     await fs.rm(repo, { recursive: true, force: true });
   });
@@ -152,7 +156,7 @@ describe("session orientation", () => {
 describe("statusline", () => {
   test("not-built message before any hook has run", () => {
     const [line] = renderStatusline({}, 0, null);
-    expect(line).toContain("not built");
+    expect(line).toContain("no graph yet");
   });
 
   test("graph size, freshness badge, session savings", () => {
@@ -164,15 +168,15 @@ describe("statusline", () => {
     };
     const lines = renderStatusline(state, 2400, 42);
     expect(lines[0]).toContain("120 symbols");
-    expect(lines[0]).toContain("✓ synced");
-    expect(lines[0]).toContain("~2.4k tok saved");
+    expect(lines[0]).toContain("fresh");
+    expect(lines[0]).toContain("saved ~2.4k tok");
     expect(lines[1]).toContain("store.go");
     expect(lines[1]).toContain("ctx 42%");
   });
 
-  test("stale badge when the working tree moved", () => {
+  test("changed badge when the working tree moved", () => {
     const [line] = renderStatusline({ status: { symbols: 1, edges: 1, files: 1, treeHash: "t", updatedAt: 0 }, dirty: true, staleCount: 3, lastFile: undefined }, 0, null);
-    expect(line).toContain("⚠ 3 stale");
+    expect(line).toContain("⚠ 3 changed");
   });
 });
 

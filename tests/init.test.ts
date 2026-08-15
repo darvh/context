@@ -50,14 +50,14 @@ describe("context init", () => {
     expect(settings.hooks.UserPromptSubmit[0].hooks[0].command).toContain("hook-user");
     // no Stop/agent hook: the session savings live in the statusline now
     expect(settings.hooks.Stop).toBeUndefined();
-    // graft-parity wiring: statusline + post-edit blast radius
+    // statusline + post-edit blast-radius wiring
     expect(settings.statusLine.type).toBe("command");
     expect(settings.statusLine.command).toContain("statusline");
     expect(settings.subagentStatusLine.command).toContain("statusline");
     const postEdit = settings.hooks.PostToolUse[0];
     expect(postEdit.matcher).toBe("Write|Edit|MultiEdit");
     expect(postEdit.hooks[0].command).toContain("hook-edit");
-    // foreign hooks preserved + re-init reports unchanged (graft-style merge)
+    // foreign hooks preserved + re-init reports unchanged (idempotent merge)
     const rerun = await init({ project: true, repo, force: false, dryRun: false, only: ["claude-code"], hooks: true });
     expect(rerun.find((x) => x.what === "hooks-config")?.status).toBe("unchanged");
     await fs.rm(repo, { recursive: true, force: true });

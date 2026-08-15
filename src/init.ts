@@ -175,7 +175,7 @@ export async function init(opts: InitOptions): Promise<InitResult[]> {
 // --no-hooks is the opt-out; hooks install by default for hosts that support
 // them (never silently — each host gets an explicit config entry).
 //
-// Hook wiring follows the graft pattern: per-event idempotent merge. Foreign
+// Hook wiring: per-event idempotent merge. Foreign
 // hook entries in an event are preserved, our own entries are replaced (so
 // re-init re-points instead of stacking), nothing is written when the file is
 // byte-identical, and unparseable host configs are skipped — never clobbered.

@@ -147,10 +147,10 @@ export async function runHook(task: string, cwd: string, opts: HookOpts = {}): P
     block.push(`hint: expand with \`context expand ${capsule.hits[0]?.handle}\``);
     out.hookSpecificOutput = { hookEventName: "UserPromptSubmit", additionalContext: block.join("\n") };
 
-    // project Graft-style savings from the files the capsule replaces, fold
-    // into the session running total (statusline's `~N tok saved`), and
-    // snapshot the graph size for the statusline (fresh: this build just
-    // brought the graph up to date with the tree)
+    // project estimated input-token savings from the files the capsule
+    // replaces, fold into the session running total (statusline's
+    // `saved ~N tok`), and snapshot the graph size for the statusline
+    // (fresh: this build just brought the graph up to date with the tree)
     const savings = await projectSavings(b, capsule);
     state.key = key;
     state.seen = { tree: b.treeHash, items: capsule.hits.map((h) => `${h.file}:${h.line}`) };

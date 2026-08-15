@@ -16,8 +16,8 @@ function fmt(n: number): string {
 
 /** Live statusline (Claude Code `statusLine`/`subagentStatusLine`). Reads the
  *  hook-maintained cache only — a pure read, no subprocess, so it stays cheap
- *  even though the host calls it on every render. Mirrors graft's statusline:
- *  graph size + freshness + running session token savings. */
+ *  even though the host calls it on every render: graph size, freshness
+ *  (unindexed working-tree changes), and the running session token savings. */
 export function renderStatusline(
   state: Pick<HookState, "status" | "lastFile" | "dirty" | "staleCount">,
   sessionSaved: number,
@@ -25,19 +25,16 @@ export function renderStatusline(
 ): string[] {
   const status = state.status;
   if (!status) {
-    return [C.muted("◤ context · not built · run ") + C.text('context observe "<task>"')];
+    return [C.muted("context: ") + C.text("no graph yet — run: ") + C.indigo('context observe "<task>"')];
   }
-  const top = [
-    C.muted("◤ ") + C.indigo("context"),
-    C.text(`${status.symbols} symbols / ${status.edges} edges`),
-    state.dirty ? C.amber(`⚠ ${state.staleCount ?? 1} stale`) : C.indigo("✓ synced"),
-  ];
-  if (sessionSaved > 0) top.push(C.indigo(`~${fmt(sessionSaved)} tok saved`));
+  const freshness = state.dirty ? C.amber(`⚠ ${state.staleCount ?? 1} changed`) : C.indigo("fresh");
+  const top = [C.indigo("context"), C.text(`${status.symbols} symbols / ${status.edges} edges`), freshness];
+  if (sessionSaved > 0) top.push(C.indigo(`saved ~${fmt(sessionSaved)} tok`));
   const bottom: string[] = [];
   if (typeof ctxPct === "number") bottom.push(C.text(`ctx ${ctxPct}%`));
-  if (state.lastFile) bottom.push(C.muted("last: ") + C.text(state.lastFile));
+  if (state.lastFile) bottom.push(C.muted("last edited: ") + C.text(state.lastFile));
   const lines = [top.join(SEP)];
-  if (bottom.length) lines.push(C.muted("▸ ") + bottom.join(SEP));
+  if (bottom.length) lines.push(C.muted("· ") + bottom.join(SEP));
   return lines;
 }
 
@@ -55,7 +52,7 @@ export async function main(): Promise<void> {
   const sessionSaved = state.sessions?.[sessionId] ?? 0;
   const agent = input?.agent?.name;
   if (agent) {
-    process.stdout.write(`${C.muted("◤ ")}${C.indigo(agent)}${SEP}${C.muted("context")}\n`);
+    process.stdout.write(`${C.indigo(agent)}${SEP}${C.muted("context")}\n`);
     return;
   }
   const raw = input?.context_window?.used_percentage;

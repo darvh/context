@@ -15,10 +15,10 @@ export interface Savings {
 
 // Baseline = the whole files the capsule points at, not symbol bodies: a cold
 // agent opens whole files (Read) to answer — it never reads the 40-line span
-// we point at and stops. This is graft's model (baseline = whole covered
-// files) and keeps savedTokens positive on the normal case where the capsule
-// is smaller than the files it replaces. Caps keep a giant file from inflating
-// the number, and the union honest for a one-file answer.
+// we point at and stops. The baseline is the whole covered files, capped, so
+// savedTokens stays positive on the normal case where the capsule is smaller
+// than the files it replaces. Caps keep a giant file from inflating the
+// number, and the union honest for a one-file answer.
 const MAX_FILES = 4;
 const PER_FILE_CAP_CHARS = 4000; // ≈1000 tokens per file
 const TOTAL_CAP_CHARS = 12000; // ≈3000 tokens across the union

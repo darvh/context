@@ -6,7 +6,8 @@ import { withTimeout } from "../async";
 /**
  * SessionStart orientation: every session learns repository discovery exists,
  * even when skills are not auto-loaded, and gets a compact repo overview built
- * from the (incremental) graph — graft-style, but staying a few hundred tokens
+ * from the (incremental) graph — a full repo map would burn the context budget
+ * at every session start, so this stays a few hundred tokens
  * because the full command reference lives in the skill file. Plain-text
  * stdout works for both Claude Code and Codex SessionStart hooks. Fail open:
  * any build error or timeout degrades to the reminder alone.
