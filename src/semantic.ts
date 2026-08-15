@@ -69,7 +69,7 @@ const QUERY_PREFIX: Record<string, string> = {
   "Xenova/bge-small-en-v1.5": "Represent this sentence for searching relevant passages: ",
   "Xenova/bge-base-en-v1.5": "Represent this sentence for searching relevant passages: ",
   "jinaai/jina-embeddings-v2-base-code": "Given a web search query, retrieve relevant passages that answer the query: ",
-  "Xenova/jina-embeddings-v2-base-code": "Given a web search query, retrieve relevant passages that answer the query: ",
+  "onnx-community/Qwen3-Embedding-0.6B-ONNX": "Given a web search query, retrieve relevant passages that answer the query: ",
 };
 
 function queryFor(model: string, task: string): string {

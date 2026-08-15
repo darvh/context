@@ -73,12 +73,13 @@ Semantic document hits select a matching section before expansion.
 ### 1. Extend evaluation beyond retrieval presence
 
 `eval` and `bench` now cover file/symbol recall, directory recall, trail
-recall, exact-evidence-range recall, token budgets per declared variant, and
-dirty-tree cases. Still missing permanent per-task checks for:
+recall, exact-evidence-range recall, token budgets per declared variant,
+dirty-tree cases, and cold/warm latency with cache and index size
+(`scripts/eval.ts` reports cold/warm p50/p95, index bytes, cache hits).
+Still missing permanent per-task checks for:
 
 - unrelated items in the capsule;
-- follow-up operations needed to reach evidence;
-- cold/warm latency and cache size.
+- follow-up operations needed to reach evidence.
 
 Keep per-task regressions authoritative; aggregate scores are only summaries.
 
@@ -88,9 +89,7 @@ Run the optional semantic lane on pinned real repositories and a small paired
 agent-task sample. Measure task success, tool calls, time-to-first-correct-edit,
 and input tokens. Treat the `t-needle-1` miss as a model/corpus ceiling until
 new evidence justifies a change. Do not reintroduce removed tuning knobs or
-retain a new fusion strategy without measured improvement. A reranker bakeoff
-(Qwen3-Embedding-0.6B / Qwen3-Reranker-0.6B vs MiniLM) may be attempted here,
-but only becomes a default after agent-level tasks beat the current lane.
+retain a new fusion strategy without measured improvement.
 
 ### 4. Complete real-world release checks
 
@@ -100,6 +99,16 @@ latency, and clean-environment smoke behavior on a real host.
 
 ## Deliberately not done
 
+- **Reranker bakeoff: measured, rejected.** Qwen3-Embedding-0.6B (ungated
+  ONNX mirror `onnx-community/Qwen3-Embedding-0.6B-ONNX` via `CONTEXT_MODEL`)
+  was compared to MiniLM on the three needle tasks: identical recovery (2/3),
+  same ceiling task missed — the 0.6B model produces stronger similarities
+  (0.6+ vs 0.2) but does not surface symbols MiniLM missed. Decisively, a
+  reranker reorders candidates and cannot recover a symbol retrieval missed:
+  `t-needle-1` is a candidate-generation miss (store.ts never enters top-10),
+  so Qwen3-Reranker over Qwen3-Embedding is structurally incapable of fixing
+  the one measured gap. Revisit only if a miss classified as ordering failure
+  appears.
 - **SCIP index auto-generation.** Context consumes `index.scip` when a repo
   ships one (or `.context/facts.json` from any indexer) but never generates
   one: per-language compiler indexers would add heavy deps, network fetches,
