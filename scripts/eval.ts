@@ -49,6 +49,7 @@ interface TaskResult {
   recallSymbols: number;
   mrr: number;
   topFiles: string[];
+  evidenceRecall: number;
   outputTokens: number;
   budgetViolation: boolean;
 }
@@ -120,6 +121,15 @@ async function runVariant(name: string, tasks: Task[], taskDirs: Map<string, str
     const budgetViolation = outputTokens > BUDGET_TOKENS;
 
     const m = measureRecall(hits, t);
+
+    // exact-evidence recall: an expected range is covered when a top-k hit
+    // spans it (hit.range carries the complete source span)
+    const topK = hits.slice(0, t.topK);
+    const evidence = (t as Task & { evidence?: [string, number, number][] }).evidence ?? [];
+    const covered = evidence.filter(([file, sl, el]) =>
+      topK.some((h) => h.symbol.file === file && h.symbol.span.sl <= sl && h.symbol.span.el >= el),
+    );
+    const evidenceRecall = evidence.length ? covered.length / evidence.length : 1;
     results.push({
       id: t.id,
       type: t.type,
@@ -131,6 +141,7 @@ async function runVariant(name: string, tasks: Task[], taskDirs: Map<string, str
       recallSymbols: m.recallSymbols,
       mrr: m.mrr,
       topFiles: m.topFiles,
+      evidenceRecall,
       outputTokens,
       budgetViolation,
     });
@@ -149,6 +160,7 @@ function summarize(v: VariantResult) {
   console.log(`\n[${v.name}]`);
   console.log(`  recall@k files:   ${(mean((t) => t.recallFiles) * 100).toFixed(1)}%  (tasks with ≥1 relevant file in top-k: ${recallFiles}/${n})`);
   console.log(`  recall@k symbols: ${(mean((t) => t.recallSymbols) * 100).toFixed(1)}%`);
+  console.log(`  evidence recall:  ${(mean((t) => t.evidenceRecall) * 100).toFixed(1)}%`);
   console.log(`  mrr:              ${mean((t) => t.mrr).toFixed(3)}`);
   console.log(`  serialized tokens: ${Math.round(mean((t) => t.outputTokens))} avg/task  budget ${BUDGET_TOKENS}  violations ${budgetViolations}/${n}`);
   console.log(`  cold latency:     p50 ${c50.toFixed(0)}ms  p95 ${c95.toFixed(0)}ms`);
@@ -184,7 +196,7 @@ function perTask(variants: VariantResult[]) {
   for (const id of cols[0].byId.keys()) {
     const rows = cols.map((c) => c.byId.get(id));
     if (rows.some((r) => !r)) continue;
-    const fmt = (r: TaskResult) => `${(r.recallFiles * 100).toFixed(0).padStart(3)}% / ${r.mrr.toFixed(2).padStart(5)}  [${r.topFiles.slice(0, 2).join(", ")}]`;
+    const fmt = (r: TaskResult) => `${(r.recallFiles * 100).toFixed(0).padStart(3)}% / ${r.mrr.toFixed(2).padStart(5)} e${(r.evidenceRecall * 100).toFixed(0).padStart(3)}%  [${r.topFiles.slice(0, 2).join(", ")}]`;
     const verdict: string[] = [];
     for (let i = 1; i < rows.length; i++) {
       const prev = rows[i - 1]!;

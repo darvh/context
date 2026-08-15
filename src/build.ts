@@ -1,13 +1,16 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { scan, type ScanOpts } from "./scan";
 import { mapLimit, withTimeout } from "./async";
-import { langFor, rgLangFor } from "./lang";
+import { CACHE_VERSION, cachePathFor, loadCache, repoKey, writeCache } from "./cache";
+import { extractDoc, isDocFile, MAX_DOC_BYTES, sha256Hex, type DocFact } from "./doc";
 import { extractFile } from "./extract";
-import { resolveFacts } from "./resolve";
-import { loadCache, writeCache, repoKey, CACHE_VERSION, cachePathFor } from "./cache";
-import { isDocFile, extractDoc, sha256Hex, MAX_DOC_BYTES, type DocFact } from "./doc";
 import type { FileFacts, Graph } from "./facts";
+import { langFor, rgLangFor } from "./lang";
+import { buildDocLinks, type DocLink } from "./links";
+import { loadOverlay, mergeOverlay } from "./overlay";
+import { loadScipIndex } from "./scip";
+import { resolveFacts } from "./resolve";
+import { scan, type ScanOpts } from "./scan";
 
 export interface BuildResult {
   root: string; // walked tree (scope)
@@ -19,6 +22,7 @@ export interface BuildResult {
   fileFacts: Map<string, FileFacts>;
   graph: Graph;
   docs: DocFact[];
+  links: DocLink[]; // code<->document evidence links
   changed: Set<string>;
   parsed: number;
   reused: number;
@@ -69,7 +73,14 @@ export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResu
   }
 
   const t2 = performance.now();
-  const graph = resolveFacts([...fileFacts.values()]);
+  let graph = resolveFacts([...fileFacts.values()]);
+  // compiler-backed facts overlay: .context/facts.json (any indexer), then a
+  // binary SCIP index (index.scip) when present. Tree-sitter stays the
+  // universal fallback — unchanged when no overlay exists.
+  const overlay = await loadOverlay(s.tree);
+  if (overlay) graph = mergeOverlay(graph, overlay);
+  const scip = await loadScipIndex(s.tree);
+  if (scip) graph = mergeOverlay(graph, scip);
   const resolveMs = performance.now() - t2;
 
   // docs lane: non-code files -> extracted text for BM25/semantic indexing.
@@ -108,6 +119,10 @@ export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResu
   for (const d of freshDocs) if (d) docs.push(d);
   const docMs = performance.now() - t3;
 
+  // code<->document evidence links: exact-token/path mentions from doc
+  // sections into the symbol graph (high confidence only, deterministic)
+  const links = buildDocLinks(graph, docs);
+
   let cacheBytes = 0;
   try {
     await writeCache(s.tree, {
@@ -133,6 +148,7 @@ export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResu
     fileFacts,
     graph,
     docs,
+    links,
     changed,
     parsed: toParse.length,
     reused: cached ? fileFacts.size - toParse.length : 0,

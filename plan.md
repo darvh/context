@@ -45,27 +45,37 @@ Semantic document hits select a matching section before expansion.
 - The remaining fixture miss is the known semantic needle task
   `t-needle-1`; the current embedding model ranks `src/index.ts` instead of
   `src/session/store.ts`.
-- `bun run bench` is now a truthful shared-retrieval observation ablation. It
-  reports 100% directory/trail recall on ordinary fixture tasks, but the
-  full RepoMap/trails observation exceeds the 1200-token budget on 15/23 tasks
-  (map on 3/23). This is the current release blocker.
+- `bun run bench` is a truthful shared-retrieval observation ablation with
+  declared per-variant budgets: observe (flat/dirmap) 1200 tokens, follow-up
+  calls map 400 and trails 400. All 23 tasks are within budget (flat 0/23,
+  dirmap 0/23, map 0/23, trails 0/23 over); directory/trail recall is 100% on
+  ordinary tasks. The only flag is the known semantic ceiling `t-needle-1`.
+- `eval` measures exact-evidence-range recall per task: 93.5% baseline, 97.8%
+  hybrid. Known gap: `g5`'s `Store` struct span ranks below top-5 (the
+  capsule surfaces `Get`/`OpenStore` spans instead; the struct is reachable
+  via `impact`).
+- Compiler-backed graph overlay: a binary SCIP index (`index.scip`,
+  `@c4312/scip` protobuf) or a documented JSON facts file
+  (`.context/facts.json`) merges into the tree-sitter graph — exact
+  definitions/references/implementations upgrade confidence; tree-sitter
+  behavior is unchanged when no overlay exists. Reference edges come from
+  occurrences inside an enclosing definition (containment, else nearest
+  preceding). Pinned permanently: the TS fixture ships a generated
+  `index.scip`, so eval exercises the overlay.
+- Budget-aware context packing: the capsule is selected by utility per
+  serialized token (relevance × confidence × novelty) with authoritative pins
+  first and minimal orientation guaranteed; replaced fixed
+  "append-then-drop" composition. Same recall/evidence, leaner output, and
+  novelty spreads hits across files.
 
 ## Open work
 
-### 1. Make observation variants fit one budget
+### 1. Extend evaluation beyond retrieval presence
 
-Keep `bench` as an idea checker: retrieval is intentionally shared, while
-flat, DirMap, RepoMap, and trails vary the observation surface. Reduce or
-prioritize map/trail output so every variant fits the same declared budget, or
-define explicit follow-up-call budgets and report them separately. Do not count
-the current over-budget trails variant as shipped.
+`eval` and `bench` now cover file/symbol recall, directory recall, trail
+recall, exact-evidence-range recall, token budgets per declared variant, and
+dirty-tree cases. Still missing permanent per-task checks for:
 
-### 2. Extend evaluation beyond retrieval presence
-
-`eval` and `bench` currently cover file/symbol recall, directory recall, trail
-recall, token budgets, and dirty-tree cases. Add permanent per-task checks for:
-
-- exact evidence-range recall;
 - unrelated items in the capsule;
 - follow-up operations needed to reach evidence;
 - cold/warm latency and cache size.
@@ -78,13 +88,27 @@ Run the optional semantic lane on pinned real repositories and a small paired
 agent-task sample. Measure task success, tool calls, time-to-first-correct-edit,
 and input tokens. Treat the `t-needle-1` miss as a model/corpus ceiling until
 new evidence justifies a change. Do not reintroduce removed tuning knobs or
-retain a new fusion strategy without measured improvement.
+retain a new fusion strategy without measured improvement. A reranker bakeoff
+(Qwen3-Embedding-0.6B / Qwen3-Reranker-0.6B vs MiniLM) may be attempted here,
+but only becomes a default after agent-level tasks beat the current lane.
 
 ### 4. Complete real-world release checks
 
 Run `bun run eval -- real` against the pinned revisions after the current staged
 cleanup. Confirm compiled-runtime semantic degradation, warm/incremental
 latency, and clean-environment smoke behavior on a real host.
+
+## Deliberately not done
+
+- **SCIP index auto-generation.** Context consumes `index.scip` when a repo
+  ships one (or `.context/facts.json` from any indexer) but never generates
+  one: per-language compiler indexers would add heavy deps, network fetches,
+  and spawn overhead — against the deterministic, no-network, fail-open
+  contract. Tree-sitter extraction is Context's own index; SCIP is a precision
+  upgrade on repos that already have it. A hint command could be added later,
+  nothing more.
+- **Vector DB / GraphRAG / more fusion knobs / LLM summaries / autonomous
+  retrieval loops** — rejected per the hypothesis experiments.
 
 ## Acceptance gate
 

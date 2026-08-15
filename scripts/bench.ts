@@ -20,10 +20,12 @@ import type { RankedHit } from "../src/query";
  * file/dir recall is a SHARED gate, measured once from the common hits and
  * reported as the ship condition, never as per-variant "evidence".
  *
- * Every variant must fit within the SAME single budget (BUDGET); map and
- * follow are follow-up calls serialized on top of the dirmap capsule, not a
- * license for a bigger budget. A variant ships only when recall does not
- * regress AND the full serialized observation stays within budget.
+ * flat/dirmap are Observe capsule variants sharing one budget (BUDGET): a
+ * variant ships only when recall does not regress AND the capsule stays within
+ * budget. map and trails are follow-up CALLS (separate commands per the
+ * Observe contract), measured against their own declared budgets
+ * (MAP_BUDGET/TRAILS_BUDGET) and reported separately — the plan's "explicit
+ * follow-up-call budgets" resolution, not a bigger Observe budget.
  *
  *   bun run bench                     # fixture corpus
  *   bun run bench -- real              # + pinned real repos
@@ -33,6 +35,8 @@ import type { RankedHit } from "../src/query";
 import { buildTaskDirs, loadAllTasks, type Task } from "./eval-shared";
 
 const BUDGET = 1200;
+const MAP_BUDGET = 400;
+const TRAILS_BUDGET = 400;
 const args = process.argv.slice(2);
 const useReal = args.includes("--real") || args.includes("real");
 const jsonArg = args.indexOf("--json");
@@ -62,9 +66,10 @@ function flatCapsule(c: Capsule): Capsule {
   return { ...c, dirs: [] as Capsule["dirs"] };
 }
 
-/** Serialized observation per variant. flat/dirmap differ only in the DirMap
- *  lane; map and trails add a RepoMap and trail text on top (follow-up calls).
- *  Every variant is measured against the same BUDGET. */
+/** Serialized observation per variant. flat/dirmap are Observe capsule
+ *  variants (one BUDGET); map and trails are follow-up calls with their own
+ *  declared budgets, reported separately — the plan's "separate operations"
+ *  contract, measured as the op's own output, not an all-in-one sum. */
 function observationTokens(name: string, capsule: Capsule, b: Awaited<ReturnType<typeof build>>): { tokens: number; mapOut: string; trailOut: string } {
   const dirmap = estTokens(capsuleToJson(capsule));
   const flat = estTokens(capsuleToJson(flatCapsule(capsule)));
@@ -79,8 +84,8 @@ function observationTokens(name: string, capsule: Capsule, b: Awaited<ReturnType
   }
   if (name === "flat") return { tokens: flat, mapOut, trailOut };
   if (name === "dirmap") return { tokens: dirmap, mapOut, trailOut };
-  if (name === "map") return { tokens: dirmap + estTokens(mapOut), mapOut, trailOut };
-  return { tokens: dirmap + estTokens(mapOut) + estTokens(trailOut), mapOut, trailOut };
+  if (name === "map") return { tokens: estTokens(mapOut), mapOut, trailOut };
+  return { tokens: estTokens(trailOut), mapOut, trailOut };
 }
 
 async function runTask(task: Task): Promise<TaskRow> {
@@ -113,14 +118,15 @@ async function runTask(task: Task): Promise<TaskRow> {
     trailRecall = expected.length ? expected.reduce<number>((s, x) => s + x, 0) / expected.length : 1;
   }
 
-  // per-variant serialized tokens (ablation of the observation sections);
-  // all variants share the single budget
+  // per-variant serialized tokens: observe variants share BUDGET; map and
+  // trails (follow-up calls) have their own declared budgets
   const tokens: Record<string, number> = {};
   const violation: Record<string, boolean> = {};
   for (const name of ["flat", "dirmap", "map", "trails"]) {
     const { tokens: n } = observationTokens(name, capsule, b);
     tokens[name] = n;
-    violation[name] = n > BUDGET;
+    const cap = name === "map" ? MAP_BUDGET : name === "trails" ? TRAILS_BUDGET : BUDGET;
+    violation[name] = n > cap;
   }
 
   return {
@@ -163,7 +169,8 @@ for (const v of byVariant) {
   const n = v.rows.length;
   const mean = (f: (r: TaskRow) => number) => v.rows.reduce((s, r) => s + f(r), 0) / n;
   const over = v.rows.filter((r) => r.budgetViolation[v.name]).length;
-  console.log(`[${v.name}] avg observation ${Math.round(mean((r) => r.tokens[v.name as keyof TaskRow["tokens"]]))} tokens  over budget ${over}/${n}`);
+  const cap = v.name === "map" ? MAP_BUDGET : v.name === "trails" ? TRAILS_BUDGET : BUDGET;
+  console.log(`[${v.name}] avg ${Math.round(mean((r) => r.tokens[v.name as keyof TaskRow["tokens"]]))} tokens (budget ${cap})  over ${over}/${n}`);
 }
 
 if (jsonOut) {

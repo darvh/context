@@ -5,6 +5,7 @@ import { follow, renderFollow } from "../src/follow";
 import { mapDir } from "../src/repo-map";
 import { buildDirCards, rankDirCards } from "../src/dirmap";
 import { rankSymbols } from "../src/query";
+import path from "node:path";
 
 const GO = new URL("./fixtures/go", import.meta.url).pathname;
 
@@ -117,5 +118,49 @@ describe("map", () => {
     expect(store.syms.map((s) => s.name)).toContain("OpenStore");
     const testBlock = blocks.find((bl) => bl.file === "internal/session/store_test.go")!;
     expect(testBlock.calls.length).toBeGreaterThan(0); // test calls OpenStore/Get/Set
+  });
+});
+
+describe("code<->doc links", () => {
+  test("docs mentioning exported symbols produce evidence links", async () => {
+    const b = await buildGo();
+    const sym = b.links.find((l) => l.kind === "symbol" && l.mention === "OpenStore");
+    expect(sym).toBeDefined();
+    expect(sym!.doc).toBe("docs/store-guide.md");
+    const path = b.links.find((l) => l.kind === "path");
+    expect(path?.target).toBe("internal/session/store.go");
+  });
+
+  test("impact surfaces documented_by", async () => {
+    const b = await buildGo();
+    const r = impact(b, "OpenStore");
+    expect(r.documentedBy.length).toBeGreaterThan(0);
+    expect(r.documentedBy[0].doc).toBe("docs/store-guide.md");
+    expect(renderImpact(r, false)).toContain("documented_by");
+  });
+});
+
+describe("compiler facts overlay", () => {
+  test("mergeOverlay upgrades confidence and adds exact edges", async () => {
+    const { mergeOverlay } = await import("../src/overlay");
+    const b = await buildGo();
+    const overlay: Parameters<typeof mergeOverlay>[1] = {
+      version: 1,
+      symbols: [{ id: "internal/session/store.go::OpenStore::18", file: "internal/session/store.go", name: "OpenStore", kind: "function", line: 18, endLine: 20, sig: "func OpenStore(path string) (*Store, error)" }],
+      edges: [{ from: "cmd/server/main.go::main::13", to: "internal/session/store.go::OpenStore::18", kind: "implement", at: "cmd/server/main.go:13" }],
+    };
+    const g = mergeOverlay(b.graph, overlay);
+    const openStore = g.symbols.find((s) => s.name === "OpenStore");
+    expect(openStore?.conf).toBe("exact");
+    expect(openStore?.span.el).toBe(20);
+    const e = g.edges.find((x) => x.kind === "implement");
+    expect(e).toBeDefined();
+    expect(e!.conf).toBe("exact");
+    expect(e!.to).toBe("internal/session/store.go::OpenStore::18");
+  });
+
+  test("no overlay file leaves the graph unchanged", async () => {
+    const { loadOverlay } = await import("../src/overlay");
+    expect(await loadOverlay(path.join(import.meta.dir, "..", "spike", "fixtures", "go"))).toBeNull();
   });
 });

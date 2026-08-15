@@ -25,6 +25,13 @@
           "Get",
           "NewHandler"
         ]
+      ],
+      "evidence": [
+        [
+          "internal/session/store.go",
+          23,
+          31
+        ]
       ]
     },
     {
@@ -65,7 +72,14 @@
         "internal/session/store.go"
       ],
       "expectedSymbols": [],
-      "changed": []
+      "changed": [],
+      "evidence": [
+        [
+          "internal/session/store.go",
+          18,
+          20
+        ]
+      ]
     },
     {
       "id": "g5",
@@ -81,7 +95,19 @@
         "Store",
         "Get"
       ],
-      "changed": []
+      "changed": [],
+      "evidence": [
+        [
+          "internal/session/store.go",
+          23,
+          31
+        ],
+        [
+          "internal/session/store.go",
+          11,
+          15
+        ]
+      ]
     },
     {
       "id": "g6",
@@ -157,6 +183,13 @@
         [
           "openStore",
           "get"
+        ]
+      ],
+      "evidence": [
+        [
+          "src/session/store.ts",
+          7,
+          17
         ]
       ]
     },
@@ -343,6 +376,13 @@
       "why": "doc lane: an anydoc-converted office file must surface via its extracted sections",
       "directories": [
         "docs"
+      ],
+      "evidence": [
+        [
+          "docs/archiver-policy.rtf",
+          3,
+          3
+        ]
       ]
     },
     {

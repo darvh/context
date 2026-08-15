@@ -9,6 +9,7 @@ export interface ImpactReport {
   callees: { name: string; file: string; line: number; conf: string }[];
   relations: { kind: string; name: string; file: string; line: number; conf: string }[];
   tests: { name: string; file: string; line: number }[];
+  documentedBy: { doc: string; section: number; mention: string }[];
   changedFiles: string[];
   changed: boolean;
 }
@@ -42,19 +43,20 @@ export function impact(b: BuildResult, symbolName?: string, diffOnly = false): I
       callees: [],
       relations: [],
       tests: [],
+      documentedBy: [],
       changedFiles,
       changed: true,
     };
   }
 
   if (!symbolName) {
-    return { callers: [], callees: [], relations: [], tests: [], changedFiles, changed: false };
+    return { callers: [], callees: [], relations: [], tests: [], documentedBy: [], changedFiles, changed: false };
   }
 
   // qualified id (file::name::line) is unambiguous
   const byQualified = byId.get(symbolName);
   const cands = byQualified ? [byQualified] : byName.get(symbolName);
-  if (!cands) return { callers: [], callees: [], relations: [], tests: [], changedFiles, changed: false };
+  if (!cands) return { callers: [], callees: [], relations: [], tests: [], documentedBy: [], changedFiles, changed: false };
 
   // never silently choose the first same-name symbol: an ambiguous bare name
   // surfaces its candidates so the caller can qualify
@@ -66,6 +68,7 @@ export function impact(b: BuildResult, symbolName?: string, diffOnly = false): I
       callees: [],
       relations: [],
       tests: [],
+      documentedBy: [],
       changedFiles,
       changed: false,
     };
@@ -92,12 +95,18 @@ export function impact(b: BuildResult, symbolName?: string, diffOnly = false): I
     }
   }
 
+  const documentedBy = b.links
+    .filter((l) => l.kind === "symbol" && l.target === id)
+    .map((l) => ({ doc: l.doc, section: l.section, mention: l.mention }))
+    .slice(0, 6);
+
   return {
     symbol: sym,
     callers,
     callees,
     relations,
     tests,
+    documentedBy,
     changedFiles,
     changed: changedFiles.includes(sym.file),
   };
@@ -131,6 +140,8 @@ export function renderImpact(r: ImpactReport, diffOnly: boolean): string {
   for (const c of r.relations) lines.push(`  ${c.file}:${c.line} ${c.kind} ${c.name} [${c.conf}]`);
   lines.push(`\ntests: ${r.tests.length}`);
   for (const c of r.tests) lines.push(`  ${c.file}:${c.line} ${c.name}`);
+  lines.push(`\ndocumented_by: ${r.documentedBy.length}`);
+  for (const d of r.documentedBy) lines.push(`  ${d.doc} section ${d.section + 1} (mentions ${d.mention})`);
   lines.push(`\nchanged files: ${r.changedFiles.length}`);
   for (const f of r.changedFiles) lines.push(`  ${f}`);
   return lines.join("\n");
