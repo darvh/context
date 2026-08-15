@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 /**
  * Docs lane: deterministic, model-free extraction for non-code files.
  * Kept separate from the code/symbol lane — docs never enter the symbol graph;
- * their text feeds the BM25 + semantic indexes so `context prepare` can
+ * their text feeds the BM25 + semantic indexes so `context observe` can
  * surface them. Fail-open: any extraction error yields empty text.
  *
  * Extraction: @firecrawl/anydoc (Rust core, local, no LLM) for office/PDF

@@ -23,7 +23,7 @@ context --help
 context --version   prints version, build commit, cache schema, runtime kind
 ```
 
-`observe` (alias `prepare`) is orientation: DirMap, neighborhoods, spans, and a `confidence` label (`strong` / `weak` / `conflicted` / `empty`). `map` compiles a bounded local RepoMap over one directory (per-file symbols, calls, tests). `follow` walks one edge kind (call, import, inherit, implement, ref, contain, test, all) with bounded depth and short trails; caller/callee analysis is `impact`'s job. `follow <symbol> <symbol2>` renders the minimal connecting subgraph between two symbols. `impact` is the symbol map (callers/callees/relations/tests + `documented_by` docs) plus `--diff`. Ambiguous bare names list their qualified candidates (`file::name::line`) instead of silently picking the first.
+`observe` is orientation: DirMap, neighborhoods, spans, and a `confidence` label (`strong` / `weak` / `conflicted` / `empty`). `map` compiles a bounded local RepoMap over one directory (per-file symbols, calls, tests). `follow` walks one edge kind (call, import, inherit, implement, ref, contain, test, all) with bounded depth and short trails; caller/callee analysis is `impact`'s job. `follow <symbol> <symbol2>` renders the minimal connecting subgraph between two symbols. `impact` is the symbol map (callers/callees/relations/tests + `documented_by` docs) plus `--diff`. Ambiguous bare names list their qualified candidates (`file::name::line`) instead of silently picking the first.
 
 `--targets` rejects unknown agent names (exit 1, lists known targets). `context config` reads/writes `~/.config/context/config.json` (honors `XDG_CONFIG_HOME`); it never touches the repository.
 

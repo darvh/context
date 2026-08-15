@@ -135,7 +135,7 @@ async function cmdPrepare(args: Args) {
   const out = args.json ? capsuleToJson(capsule) : renderCapsule(capsule);
   const totalMs = performance.now() - t0;
   const tel = {
-    cmd: "prepare",
+    cmd: "observe",
     totalMs: Math.round(totalMs),
     parseMs: Math.round(b.parseMs),
     refreshMs: Math.round(b.refreshMs),
@@ -163,7 +163,7 @@ async function cmdExpand(args: Args) {
   const root = (await (await import("./graph/scan")).findRoot(args.root)) ?? args.root;
   const e = await resolveExpand(root, handle);
   if (!e) {
-    console.error("context: no such handle (run `context prepare` first, or pass file:line)");
+    console.error("context: no such handle (run `context observe` first, or pass file:line)");
     process.exit(1);
   }
   process.stdout.write(renderExpanded(e));
@@ -370,7 +370,7 @@ export async function main(argv: string[]) {
     console.log(HELP);
     return;
   }
-  if (cmd === "prepare" || cmd === "observe") {
+  if (cmd === "observe") {
     args.rest.shift();
     await cmdPrepare(args);
   } else if (cmd === "map") {
