@@ -146,9 +146,16 @@ rejected per task rather than on an aggregate headline.
 
 ### Semantic fallback (optional, local)
 
-Opt-in with `context config set semantic on` (or `CONTEXT_SEMANTIC=1`). When a
-query leaves terms unresolved, Context embeds the query and symbol-level
-records with a local ONNX model
+Opt-in with `context config set semantic on` (or `CONTEXT_SEMANTIC=1`), wired
+as a confidence-gated pipeline: exact/lexical → confidence gate → semantic
+directory candidates → symbol/section candidates → rank fusion → bounded
+graph expansion. A strong lexical pass (genuine term match or authoritative
+signal) short-circuits the lane entirely — the embedding cost is only paid
+for weak or empty queries. Directory records (path + public surface + lang)
+are embedded alongside symbols and docs; on a weak query the semantic
+directories lead the DirMap, and symbol hits append below the graph hits with
+a `semantic` reason. When a query leaves terms unresolved, Context embeds the
+query and symbol-level records with a local ONNX model
 (`all-MiniLM-L6-v2` q8, ~23MB, runs on a typical dev laptop; override the
 model with `context config set model <name>` or `CONTEXT_MODEL`) and appends
 matches below the graph/lexical hits. Embeddings cover name + signature + doc
