@@ -10,7 +10,6 @@
   "scripts": {
     "start": "bun run src/cli.ts",
     "install:local": "bash install.sh --local",
-    "spike": "bun run spike/bench.ts",
     "eval": "bun run scripts/eval.ts",
     "bench": "bun run scripts/bench.ts",
     "fixture": "bun run scripts/gen-fixture.ts",

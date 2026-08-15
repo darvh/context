@@ -16,20 +16,27 @@ export interface Expanded {
 export async function expandFromCapsule(capsule: Capsule | null, handle: string): Promise<Expanded | null> {
   const hit = capsule?.hits.find((h) => h.handle === handle);
   if (!hit) return null;
-  return expandFile(path.resolve(capsule!.root, hit.file), hit.line);
+  // span-backed: expand the recorded source range with bounded context
+  const [sl, el] = hit.range.split("-").map(Number);
+  const abs = path.resolve(capsule!.root, hit.file);
+  if (sl && el) return expandSpan(abs, sl, el);
+  return expandFile(abs, hit.line);
 }
 
-export async function expandFile(file: string, centerLine: number): Promise<Expanded | null> {
+export async function expandSpan(file: string, startLine: number, endLine: number): Promise<Expanded | null> {
   try {
-    const text = await fs.readFile(file, "utf8");
-    const all = text.split("\n");
-    let from = Math.max(0, centerLine - 1 - CONTEXT_LINES);
-    let to = Math.min(all.length - 1, centerLine + 1 + CONTEXT_LINES - 1);
+    const all = (await fs.readFile(file, "utf8")).split("\n");
+    let from = Math.max(0, startLine - 1 - CONTEXT_LINES);
+    let to = Math.min(all.length - 1, endLine + CONTEXT_LINES - 1);
     if (to - from + 1 > MAX_LINES) to = from + MAX_LINES - 1;
     return { file, fromLine: from + 1, toLine: to + 1, lines: all.slice(from, to + 1) };
   } catch {
     return null;
   }
+}
+
+export async function expandFile(file: string, centerLine: number): Promise<Expanded | null> {
+  return expandSpan(file, centerLine, centerLine);
 }
 
 export function renderExpanded(e: Expanded): string {

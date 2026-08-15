@@ -16,10 +16,13 @@ import type { ScanOpts } from "./scan";
 const HELP = `context — deterministic discovery compiler
 
 usage:
-  context prepare "<task>" [--budget N] [--json] [--root DIR]
-               [--ignore pat[,pat]] [--no-gitignore]
+  context observe "<task>" [--budget N] [--json] [--root DIR]
+                [--ignore pat[,pat]] [--no-gitignore]
+  context find "<query>" [--budget N] [--json] [--root DIR]
+  context map <directory|symbol> [--root DIR]
+  context follow <symbol|qualified-id> [<edge>] [--root DIR]
   context expand <handle|file:line> [--root DIR]
-  context impact <symbol|--diff> [--json] [--root DIR]
+  context impact <symbol|qualified-id|--diff> [--json] [--root DIR]
                [--ignore pat[,pat]] [--no-gitignore]
   context init [--targets all|opencode,claude-code,codex,cursor,copilot,antigravity,pi]
                [--project] [--force] [--dry-run] [--hooks]
@@ -27,6 +30,11 @@ usage:
   context config set <key> <value>     keys: semantic on|off, model <name>
   context --help
   context --version
+
+observe/find are aliases of prepare: repository and directory orientation
+first, exact evidence via expand/find. map compiles a local RepoMap over one
+directory or symbol. follow walks one edge kind from a symbol (callers,
+callees, tests, inherit, implement, contain, ref, import, all).
 
 ignore override:
   --ignore "a,b"   add extra ignore globs (on top of .gitignore + defaults)
@@ -72,7 +80,7 @@ async function cmdPrepare(args: Args) {
   // optional semantic fallback (CONTEXT_SEMANTIC=1 or `context config set semantic on`):
   // only for queries the lexical+graph pass leaves unresolved; appended below
   // authoritative hits. Covers docs as well as code symbols.
-  let capsule = assemble({ task, build: b, hits, budgetTokens: args.budget });
+  let capsule = assemble({ task, build: b, hits, budgetTokens: args.budget, changed });
   if (capsule.unresolvedTerms.length > 0) {
     const { semanticEnabled, semanticSearch } = await import("./semantic");
     if (await semanticEnabled()) {
@@ -84,7 +92,7 @@ async function cmdPrepare(args: Args) {
       } else {
         const sem = await semanticSearch(b.root, b.graph, b.docs, task, { repoKey: repoKey(b.root) });
         if (sem?.length) hits = appendSemanticHits(hits, sem, b.graph, b.docs);
-        capsule = assemble({ task, build: b, hits, budgetTokens: args.budget });
+        capsule = assemble({ task, build: b, hits, budgetTokens: args.budget, changed });
       }
     }
   }
@@ -146,6 +154,58 @@ async function cmdImpact(args: Args) {
     outputTokens: estTokens(out),
   };
   console.error("context:telemetry " + JSON.stringify(tel));
+  process.stdout.write(out);
+}
+
+async function cmdMap(args: Args) {
+  const arg = args.rest[0];
+  if (!arg) {
+    console.error("usage: context map <directory|symbol>");
+    process.exit(1);
+  }
+  const b = await build(args.root, args.scan);
+  // directory handle when it names an existing directory (with or without /)
+  const dirArg = arg.endsWith("/") ? arg.slice(0, -1) : arg;
+  const { mapDir, mapSymbol } = await import("./repo-map");
+  const isDir = b.files.some((f) => f === dirArg || f.startsWith(dirArg + "/"));
+  if (isDir) {
+    const { blocks, truncated } = mapDir(b, dirArg);
+    const out: string[] = [];
+    if (!blocks.length) {
+      out.push(`no code symbols under ${arg}`);
+    }
+    for (const blk of blocks) {
+      out.push(`\n${blk.file}`);
+      for (const s of blk.syms) out.push(`  ${s.kind} ${s.name}  ${s.sig}  ${s.nameLine}-${s.span.el}`);
+      for (const c of blk.calls) out.push(`    calls → ${c}`);
+      for (const t of blk.testedBy) out.push(`    tested_by → ${t}`);
+    }
+    if (truncated) out.push(`\n(truncated at ${12} files — map a subdirectory for more)`);
+    console.error("context:telemetry " + JSON.stringify({ cmd: "map", dir: dirArg, files: blocks.length, outputTokens: estTokens(out.join("\n")) }));
+    process.stdout.write(out.join("\n") + "\n");
+    return;
+  }
+  const { out, truncated } = mapSymbol(b, arg);
+  console.error("context:telemetry " + JSON.stringify({ cmd: "map", symbol: arg, outputTokens: estTokens(out) }));
+  process.stdout.write(out + (truncated ? "\n(truncated — follow deeper with a qualified id)" : "") + "\n");
+}
+
+async function cmdFollow(args: Args) {
+  const symbol = args.rest[0];
+  const edge = args.rest[1] ?? "all";
+  if (!symbol) {
+    console.error("usage: context follow <symbol|qualified-id> [edge]");
+    process.exit(1);
+  }
+  const b = await build(args.root, args.scan);
+  const { follow, renderFollow, EDGE_KINDS } = await import("./follow");
+  if (edge !== "all" && !(EDGE_KINDS as readonly string[]).includes(edge)) {
+    console.error(`context: unknown edge "${edge}" (known: ${EDGE_KINDS.join(", ")})`);
+    process.exit(1);
+  }
+  const r = follow(b, symbol, edge);
+  const out = renderFollow(r);
+  console.error("context:telemetry " + JSON.stringify({ cmd: "follow", symbol, edge, trails: r.trails.length, outputTokens: estTokens(out) }));
   process.stdout.write(out);
 }
 
@@ -236,9 +296,15 @@ export async function main(argv: string[]) {
     console.log(HELP);
     return;
   }
-  if (cmd === "prepare") {
+  if (cmd === "prepare" || cmd === "observe" || cmd === "find") {
     args.rest.shift();
     await cmdPrepare(args);
+  } else if (cmd === "map") {
+    args.rest.shift();
+    await cmdMap(args);
+  } else if (cmd === "follow") {
+    args.rest.shift();
+    await cmdFollow(args);
   } else if (cmd === "expand") {
     args.rest.shift();
     await cmdExpand(args);

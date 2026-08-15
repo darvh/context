@@ -6,6 +6,8 @@ import { buildBm25Index } from "../src/bm25";
 import { repoKey } from "../src/cache";
 import { semanticEnabled, semanticSearch } from "../src/semantic";
 import { assemble } from "../src/assemble";
+import { capsuleToJson } from "../src/render";
+import { estTokens } from "../src/tokens";
 import type { RankedHit } from "../src/query";
 
 /**
@@ -25,6 +27,8 @@ import type { RankedHit } from "../src/query";
  *   bun run eval -- semantic          # + semantic fallback lane
  *   bun run eval -- --json out.json   # raw per-task results
  */
+
+const BUDGET_TOKENS = 1200;
 
 const ROOT = path.join(import.meta.dir, "..");
 const FIXTURES = path.join(ROOT, "spike", "fixtures");
@@ -59,6 +63,8 @@ interface TaskResult {
   recallSymbols: number;
   mrr: number;
   topFiles: string[];
+  outputTokens: number;
+  budgetViolation: boolean;
 }
 
 interface VariantResult {
@@ -153,13 +159,19 @@ async function runVariant(name: string, tasks: Task[], taskDirs: Map<string, str
       bm25: idx2,
       docs: b2.docs,
     });
+    const changed = new Set(t.changed);
     if (semantic) {
-      const cap = assemble({ task: t.query, build: b2, hits, budgetTokens: 1200 });
+      const cap = assemble({ task: t.query, build: b2, hits, budgetTokens: BUDGET_TOKENS, changed });
       if (cap.unresolvedTerms.length > 0) {
         const sem = await semanticSearch(b2.root, b2.graph, b2.docs, t.query, { repoKey: repoKey(b2.root) });
         if (sem?.length) hits = appendSemanticHits(hits, sem, b2.graph, b2.docs);
       }
     }
+
+    // budget compliance: the capsule must serialize within the declared budget
+    const capsule = assemble({ task: t.query, build: b2, hits, budgetTokens: BUDGET_TOKENS, changed });
+    const outputTokens = estTokens(capsuleToJson(capsule));
+    const budgetViolation = outputTokens > BUDGET_TOKENS;
 
     const topK = hits.slice(0, t.topK);
     const topFiles = [...new Set(topK.map((h) => h.symbol.file))];
@@ -182,6 +194,8 @@ async function runVariant(name: string, tasks: Task[], taskDirs: Map<string, str
       recallSymbols: t.expectedSymbols.length ? hitSyms.length / t.expectedSymbols.length : 1,
       mrr: rr ? 1 / rr : 0,
       topFiles,
+      outputTokens,
+      budgetViolation,
     });
   }
 
@@ -194,10 +208,12 @@ function summarize(v: VariantResult) {
   const { p50: c50, p95: c95 } = percentiles(v.cold);
   const { p50: w50, p95: w95 } = percentiles(v.warm);
   const recallFiles = v.tasks.filter((t) => t.recallFiles > 0).length;
+  const budgetViolations = v.tasks.filter((t) => t.budgetViolation).length;
   console.log(`\n[${v.name}]`);
   console.log(`  recall@k files:   ${(mean((t) => t.recallFiles) * 100).toFixed(1)}%  (tasks with ≥1 relevant file in top-k: ${recallFiles}/${n})`);
   console.log(`  recall@k symbols: ${(mean((t) => t.recallSymbols) * 100).toFixed(1)}%`);
   console.log(`  mrr:              ${mean((t) => t.mrr).toFixed(3)}`);
+  console.log(`  serialized tokens: ${Math.round(mean((t) => t.outputTokens))} avg/task  budget ${BUDGET_TOKENS}  violations ${budgetViolations}/${n}`);
   console.log(`  cold latency:     p50 ${c50.toFixed(0)}ms  p95 ${c95.toFixed(0)}ms`);
   console.log(`  warm latency:     p50 ${w50.toFixed(0)}ms  p95 ${w95.toFixed(0)}ms`);
   console.log(`  index size:       ${v.indexBytes} bytes (bm25)  cache hits ${v.cacheHits}/${v.cacheHits + v.parsed}`);
@@ -205,6 +221,11 @@ function summarize(v: VariantResult) {
   if (missed.length) {
     console.log(`  top-k misses:`);
     for (const m of missed) console.log(`    ${m.id} "${m.query}" expected ${m.expectedFiles.join(",")} got ${m.topFiles.slice(0, 3).join(",") || "(none)"}`);
+  }
+  if (budgetViolations) {
+    console.log(`  budget violations:`);
+    for (const t of v.tasks.filter((x) => x.budgetViolation)) console.log(`    ${t.id} "${t.query}" serialized ${t.outputTokens} > ${BUDGET_TOKENS}`);
+    process.exitCode = 1;
   }
 }
 
@@ -233,7 +254,7 @@ function perTask(variants: VariantResult[]) {
   }
 }
 
-const fixtureTasks = (JSON.parse(await fs.readFile(path.join(ROOT, "eval", "tasks.json"), "utf8")).tasks as Task[]).map((t) => ({
+const fixtureTasks: Task[] = (JSON.parse(await fs.readFile(path.join(ROOT, "eval", "tasks.json"), "utf8")).tasks as Task[]).map((t) => ({
   ...t,
   fixture: true,
   why: t.why ?? "fixture task: regression gate on a known-shape repository",
@@ -241,7 +262,7 @@ const fixtureTasks = (JSON.parse(await fs.readFile(path.join(ROOT, "eval", "task
 
 let allTasks = fixtureTasks;
 if (useReal) {
-  const realTasks = (JSON.parse(await fs.readFile(path.join(ROOT, "eval", "real-tasks.json"), "utf8")).tasks as Task[]).map((t) => ({ ...t }));
+  const realTasks: Task[] = JSON.parse(await fs.readFile(path.join(ROOT, "eval", "real-tasks.json"), "utf8")).tasks;
   allTasks = [...realTasks, ...fixtureTasks];
 }
 

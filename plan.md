@@ -87,6 +87,23 @@ Important baseline failures:
 These are the baseline to beat. New retrieval machinery is not justified until
 these correctness and compression problems are fixed.
 
+## Progress
+
+- Vectors 1–2 done. Budget is now measured on the final serialized form (both
+  renderings, `max(text, json)`) with deterministic drop order (entry points →
+  unresolved → files → changed → next → hits); `tokensUsed` is the real
+  serialized cost including its own literal, measured to fixpoint. Recent-change
+  is affinity-gated (topical match, explicit path, or a recent-work query);
+  changed files land in a bounded `changed` capsule section instead of ranking.
+  Baseline failures 1 and 2 reproduced, then fixed; regression gates added
+  (truthful-budget and dirty-tree tests, eval budget-violation checks, dirty
+  fixture `cmd/migrate/migrate.go` with zero topical affinity).
+- Measured after the fix: eval serialized tokens 1041–1045 avg vs 1200 budget,
+  0/19 violations; all dirty-tree tasks recall 100% with no regression on the
+  previous 14 tasks; 69 unit tests pass. The bm25 lane also stopped
+  re-admitting import symbols as hits (they were never supposed to be targets;
+  the truthful budget exposed it).
+
 ## Observation contract
 
 `observe(task, budget)` should produce a bounded capsule containing:
@@ -345,9 +362,9 @@ note, not as a second benchmark system.
 
 ## Implementation order
 
-1. Establish the baseline corpus and record the budget, dirty-tree, and
+1. ✅ Establish the baseline corpus and record the budget, dirty-tree, and
    pinpoint failures above.
-2. Fix truthful budgeting and changed-context pollution.
+2. ✅ Fix truthful budgeting and changed-context pollution.
 3. Implement DirMap and the L0 → L1 → L2 observation progression.
 4. Compile a neighborhood RepoMap with diversity limits.
 5. Make symbol identity and graph trails navigation-safe.

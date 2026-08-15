@@ -20,6 +20,8 @@ context init [--targets all|opencode,claude-code,codex,cursor,copilot,antigravit
              [--project] [--force] [--dry-run] [--hooks]
 context config get [key]
 context config set <key> <value>     keys: semantic on|off, model <name>
+context --help
+context --version   prints version, build commit, cache schema, runtime kind
 ```
 
 `--targets` rejects unknown agent names (exit 1, lists known targets).
@@ -77,10 +79,13 @@ plus a `.sha256` checksum file.
 ```text
 bun install
 bun run context prepare "where is session persistence handled?" --root <repo>
-bun test
-bun run spike          # feasibility benchmark -> spike/results.json
-bun run eval           # retrieval eval -> Recall@5, MRR, latency vs baseline
+bun test               # unit + smoke (launcher, cache safety, incremental)
+bun run fixture        # generate the deterministic large-repo fixture (small)
+bun run eval           # retrieval eval -> fixture subset (CI, no network)
+bun run eval -- real   # + pinned real repos (clones at fixed revisions)
+bun run bench          # heavy probe: baseline/bm25/semantic, budgets, artifacts
 bun run build          # standalone binary -> ./dist/context
+bash scripts/smoke.sh ./dist/context   # clean-environment smoke suite
 ```
 
 ## Retrieval
@@ -89,26 +94,49 @@ Ranking fuses graph relationships, changed-file, explicit-path, and
 entry-point signals (authoritative) with two fallback lanes:
 
 - **BM25** (`src/bm25.ts`): SQLite FTS5/BM25, porter-stemmed, one row per
-  symbol plus one row per non-code document.
+  symbol plus one row per non-code document *section*.
 - **Docs lane** (`src/doc.ts`): non-code files (markdown/text read directly;
   Word/Excel/PowerPoint/OpenDocument/RTF/EPUB/PDF converted by
   `@firecrawl/anydoc` — a local Rust core, no LLM, no network) are indexed by
-  their extracted text. They never enter the symbol graph; a matching doc
-  carries a real BM25 score so a documentation query surfaces its document.
+  their extracted text. Long documents are split into bounded sections
+  (headings / paragraph runs, ≤4KB each, ≤40 per doc) that carry their source
+  start line, so a 25KB file cannot bury its answer and `context expand`
+  lands on the section that matched. They never enter the symbol graph; a
+  matching doc carries a real BM25 score so a documentation query surfaces
+  its document.
 - Each hit's `reason` lists the signals that matched.
 
-`bun run eval` runs the golden task set (`eval/tasks.json`) — baseline vs
-hybrid — and reports Recall@5, MRR, latency, index size. `bun run bench` is
-the heavy on-demand probe: a large seeded corpus of synthetic adversarial code
-+ markdown with planted "needle" facts (paraphrase queries sharing zero terms
-with the fact) mixed with, via `--real`, cloned public repos and downloaded
-real multi-format documents. Reports recall/MRR grouped by seven difficulty
-classes — symbol, path, change, concept, needle, cross-format, ambiguous —
-for baseline vs hybrid (and semantic when enabled). Bench facts are honest:
-exact-symbol/path/change and ambiguous queries reach ~90-100%; concept is
-near-perfect on synthetic but hard on real repos (code legitimately beats
-docs); disjoint paraphrase needles expose the embedding model's ceiling;
-cross-format real docs are hard on large corpora.
+### Evaluation
+
+`bun run eval` runs two task sets and reports per-task rows, not just
+aggregates, so a retrieval change is accepted or rejected on real-data
+evidence:
+
+- `eval/tasks.json` — deterministic fixture subset (regression gates on
+  known-shape repos; runs in CI, no network).
+- `eval/real-tasks.json` — reviewed tasks over pinned revisions of real
+  repositories (gorilla/mux, express, flask), each recording query type,
+  acceptable top-`k`, expected files/symbols, and why the answer is relevant.
+  `bun run eval -- real` clones at the pinned revisions and reports
+  baseline vs hybrid vs semantic (`--semantic`) with per-task regressions and
+  raw JSON (`--json out.json`).
+
+`bun run bench` is the heavy on-demand probe: a large seeded corpus of
+synthetic adversarial code + markdown with planted "needle" facts (paraphrase
+queries sharing zero terms with the fact) mixed with, via `--real`, cloned
+public repos and downloaded real multi-format documents. Every run writes its
+corpus **manifest** (seed, environment, versions, full task list), raw
+per-task **results**, and a **failure corpus** (`failures.jsonl` — every
+confirmed miss, preserved before any ranking change) to `var/bench-*`, and
+enforces declared latency/memory/index **budgets** per size (WARN when
+exceeded). `--semantic --models "A,B"` compares local embedding models on the
+hard slices (paraphrase needles + cross-format docs) before any default-model
+change. Reported quality classes: symbol, path, change, concept, needle,
+cross-format, ambiguous. Bench facts are honest: exact-symbol/path/change and
+ambiguous queries reach ~90-100%; concept is near-perfect on synthetic but
+hard on real repos (code legitimately beats docs); disjoint paraphrase needles
+expose the embedding model's ceiling; cross-format real docs are hard on large
+corpora.
 
 ### Semantic fallback (optional, local)
 
@@ -133,8 +161,13 @@ stored, explicitly:
   first use. Model size, latency, and failure behavior are all visible; any
   failure degrades to the lexical/graph result.
 
-Note: the standalone binary may not load the onnx runtime from the bundle, so
-semantic search requires the Bun source path (installer falls back to it).
+Note: the semantic runtime boundary is explicit and enforced. The compiled
+binary cannot load the ONNX runtime from its bundle, so when semantic is
+enabled under the compiled runtime the command states so on stderr and
+degrades to the lexical/graph result — it never fails and never silently
+skips. The Bun source entrypoint (launcher fallback, installer source path)
+runs the full lane. `context --version` reports which runtime you are on, and
+`scripts/smoke.sh` verifies the boundary against a clean install.
 
 Cache lives in `$XDG_CACHE_HOME/context` (default `~/.cache/context`). Every
 cache/capsule/hook/semantic file is keyed by the canonical path of the
@@ -143,8 +176,12 @@ otherwise the exact cwd/`--root` — so two checkouts, two sibling non-repo
 dirs, or two agent accounts never collide, and a non-repo directory never
 shares state with any other (`src/cache.ts`). Cache writes are atomic (unique
 temp files) and fail-open: an unwritable cache directory never fails a
-request. Incremental: only changed files reparse. Working-tree edits (staged,
-unstaged, untracked) are visible on the next call.
+request. Incremental: only changed files reparse; extracted documents are
+reused by CONTENT identity — a (size, mtime) match is only trusted when the
+content hash agrees, so same-size or timestamp-preserving edits cannot leave
+stale text. Parsing, document conversion, and embedding batches are bounded
+by timeouts and fail open, so a slow converter or model never hangs a command.
+Working-tree edits (staged, unstaged, untracked) are visible on the next call.
 
 The installed command self-tests the compiled binary and falls back to the Bun
 source entrypoint when the host cannot execute compiled binaries (wrong arch,
@@ -168,6 +205,11 @@ missing loader). See `scripts/mk-launcher.sh`.
   (camelCase/snake_case) is computed once per graph, memoized across queries.
 - Doc conversion (anydoc) and semantic inference are local and opt-in; no
   silent network calls during discovery.
+- Parsing, conversion, and embedding work is time-bounded and fail-open: a
+  slow stage degrades the output, never hangs the command.
+- Retrieval changes ship with reproducible evidence: `bun run eval` per-task
+  regressions on pinned real revisions, `bun run bench` budgets + preserved
+  failure corpus.
 
 ## Hooks (host adapters, both fail open)
 
@@ -181,11 +223,9 @@ missing loader). See `scripts/mk-launcher.sh`.
 Savings projection (`src/savings.ts`) estimates the input tokens the capsule
 replaces (its pointed-at source spans) minus capsule tokens; `estimated`, per
 the plan's token accounting. Feasibility proof lives in `spike/` and the
-retrieval baseline in `eval/`.
-
-Current benchmark results are sample-fixture only (spike fixtures), not a
-product claim; the real fixture (SWE-bench / Terminal-Bench 2.1 via harbor) is
-pending.
+retrieval baseline in `eval/`. Retrieval results on pinned real revisions are
+reproducible via `bun run eval -- real`; agent-task (end-to-end) usefulness
+measurement is the next step, not yet claimed.
 
 See `skill/SKILL.md` for the host-neutral agent skill and `spike/README.md`
 for the feasibility spike.

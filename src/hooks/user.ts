@@ -59,7 +59,7 @@ export async function runHook(task: string, cwd: string, opts: HookOpts = {}): P
 
     const bm25 = b.graph.symbols.length ? buildBm25Index(b.graph) : undefined;
     const hits = rankSymbols({ task, graph: b.graph, changed, explicitFiles: [], bm25 });
-    const capsule = assemble({ task, build: b, hits, budgetTokens: HOOK_BUDGET });
+    const capsule = assemble({ task, build: b, hits, budgetTokens: HOOK_BUDGET, changed });
     if (!capsule.hits.length) {
       await writeJson(statePath, { key }).catch(() => {});
       return done(); // low confidence: preserve normal tool fallback

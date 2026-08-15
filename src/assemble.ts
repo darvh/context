@@ -2,6 +2,8 @@ import type { RankedHit } from "./query";
 import { meaningfulTerms } from "./query";
 import type { BuildResult } from "./build";
 import { estTokens } from "./tokens";
+import { serializedCost } from "./render";
+import { buildDirCards, rankDirCards, type DirCard } from "./dirmap";
 
 export interface CapsuleHit {
   handle: string;
@@ -9,6 +11,7 @@ export interface CapsuleHit {
   kind: string;
   file: string;
   line: number;
+  range: string; // complete source span "sl-el"
   sig: string;
   reason: string[];
   conf: string;
@@ -22,6 +25,8 @@ export interface Capsule {
   budgetTokens: number;
   tokensUsed: number;
   truncated: boolean;
+  changed: string[]; // bounded working-tree context, separate from task relevance
+  dirs: DirCard[]; // DirMap L0: top task-affine directories
   files: string[]; // orientation: relevant files
   entryPoints: string[];
   hits: CapsuleHit[];
@@ -30,15 +35,17 @@ export interface Capsule {
 }
 
 const MAX_SIG = 100;
+const CHANGED_MAX = 8;
 
 export interface AssembleOpts {
   task: string;
   build: BuildResult;
   hits: RankedHit[];
   budgetTokens: number;
+  changed?: Set<string> | string[];
 }
 
-export function assemble({ task, build, hits, budgetTokens }: AssembleOpts): Capsule {
+export function assemble({ task, build, hits, budgetTokens, changed }: AssembleOpts): Capsule {
   const t = meaningfulTerms(task);
   const hitTerms = hits.map((h) => new Set(meaningfulTerms(h.symbol.name + " " + h.symbol.sig)));
   const unresolvedTerms = t.filter((term) => {
@@ -59,46 +66,41 @@ export function assemble({ task, build, hits, budgetTokens }: AssembleOpts): Cap
     .slice(0, 5);
 
   const capsHits: CapsuleHit[] = [];
-  let tokensUsed = estTokens(`query: ${task}\n`);
   const selected = new Set<string>();
-  let truncated = false;
-
   for (const h of hits) {
     if (selected.has(h.symbol.id)) continue;
-    const sig = h.symbol.sig.slice(0, MAX_SIG);
-    const hit: CapsuleHit = {
-      handle: "",
+    selected.add(h.symbol.id);
+    capsHits.push({
+      handle: mkHandle(capsHits.length),
       name: h.symbol.name,
       kind: h.symbol.kind,
       file: h.symbol.file,
       line: h.symbol.nameLine,
-      sig,
+      range: `${h.symbol.span.sl}-${h.symbol.span.el}`,
+      sig: h.symbol.sig.slice(0, MAX_SIG),
       reason: h.reason,
       conf: h.conf,
-    };
-    const cost = estTokens(`${hit.name} ${sig} ${h.symbol.file}:${h.symbol.nameLine}`);
-    if (tokensUsed + cost > budgetTokens) {
-      truncated = true;
-      if (capsHits.length === 0) {
-        capsHits.push({ ...hit, handle: mkHandle(capsHits.length) });
-        tokensUsed += cost;
-      }
-      break;
-    }
-    selected.add(h.symbol.id);
-    hit.handle = mkHandle(capsHits.length);
-    capsHits.push(hit);
-    tokensUsed += cost;
+    });
   }
 
-  return {
+  const changedList = [...(changed ?? [])].sort().slice(0, CHANGED_MAX);
+
+  // DirMap L0: compact directory cards ranked by task affinity, not symbol count
+  const dirs = rankDirCards(buildDirCards(build), hits);
+
+  // the truthfulness contract: selection is measured on the final serialized
+  // form (both renderings), not an approximation of the selected labels.
+  // Drop the least useful sections deterministically until both fit.
+  const capsule: Capsule = {
     query: task,
     root: build.root,
     gitHead: build.gitHead,
     workingTree: build.treeHash,
     budgetTokens,
-    tokensUsed,
-    truncated,
+    tokensUsed: 0,
+    truncated: false,
+    changed: changedList,
+    dirs,
     files,
     entryPoints,
     hits: capsHits,
@@ -108,6 +110,36 @@ export function assemble({ task, build, hits, budgetTokens }: AssembleOpts): Cap
       ...capsHits.slice(0, 3).map((h) => `context impact ${h.name}`),
     ],
   };
+  return truncateToBudget(capsule, budgetTokens);
+}
+
+// Drop order: entry points and unresolved terms first, then the
+// relevant-files lane, the DirMap, the changed context (re-derivable via
+// git), then the next actions (cheap navigation, kept over weaker sections),
+// hits last (the payload). Boilerplate (query/root/identity) is never
+// dropped; if it alone exceeds the budget the capsule reports the true
+// serialized cost and truncated=true. tokensUsed is part of the serialized
+// form, so the measured cost must include its own final value (measured until
+// fixpoint).
+function truncateToBudget(c: Capsule, budget: number): Capsule {
+  let truncated = false;
+  for (;;) {
+    c.tokensUsed = serializedCost(c);
+    if (c.tokensUsed <= budget) break;
+    truncated = true;
+    const before = c.tokensUsed;
+    if (c.entryPoints.length) c.entryPoints.pop();
+    else if (c.unresolvedTerms.length) c.unresolvedTerms.pop();
+    else if (c.files.length) c.files.pop();
+    else if (c.dirs.length) c.dirs.pop();
+    else if (c.changed.length) c.changed.pop();
+    else if (c.next.length) c.next.pop();
+    else if (c.hits.length) c.hits.pop();
+    c.tokensUsed = serializedCost(c);
+    if (c.tokensUsed >= before) break; // nothing left to drop: boilerplate alone exceeds the budget
+  }
+  c.truncated = truncated;
+  return c;
 }
 
 export function mkHandle(i: number): string {

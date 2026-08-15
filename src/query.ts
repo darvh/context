@@ -62,16 +62,24 @@ export interface QueryInput {
 }
 
 /** Transient symbol for a doc file (or one of its sections) — never stored in
- * the graph, only for capsule rendering. The line points at the section that
- * matched so `context expand` lands on the answer region. */
+ *  the graph, only for capsule rendering. The line points at the section that
+ *  matched so `context expand` lands on the answer region; the sig records the
+ *  section ordinal and heading when the section is heading-led. */
 export function docSymbol(d: DocFact, line = 1): SymbolFact {
   const name = d.file.split("/").pop() ?? d.file;
+  const idx = d.sections.findIndex((s) => s.line === line);
+  let sig = "";
+  if (idx >= 0) {
+    const sec = d.sections[idx];
+    const heading = sec.text.split("\n").find((l) => l.startsWith("#"));
+    sig = `section ${idx + 1}${heading ? ` · ${heading.trim().replace(/^#+\s*/, "")}` : ""}`;
+  }
   return {
     id: `doc::${d.file}`,
     file: d.file,
     kind: "doc",
     name,
-    sig: "",
+    sig,
     span: { sl: line, sc: 1, el: line, ec: 1 },
     nameLine: line,
     exported: false,
@@ -92,6 +100,12 @@ export interface SemanticResult {
 // signal (recent-change, explicit-file) already pinned the answer.
 const WEAK_BASE_SCORE = 5;
 const AUTHORITATIVE_REASONS = ["explicit-file", "recent-change"];
+
+// words that make a query explicitly about recent working-tree changes; when
+// present, recent-change applies to every changed file regardless of topical
+// affinity ("what did we change recently"). Without one, change is only a
+// boost on top of a real match, never a ranking reason by itself.
+const RECENT_WORDS = new Set(["recent", "recently", "change", "changed", "changes", "modify", "modified", "uncommitted", "dirty"]);
 
 /**
  * Append semantic hits. When the graph/lexical pass is weak (no authoritative
@@ -212,6 +226,7 @@ const GENERIC_TEST = new Set(["it", "test", "describe", "expect", "beforeeach", 
 export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs }: QueryInput): RankedHit[] {
   const t = meaningfulTerms(task);
   const tset = new Set(t);
+  const recentIntent = t.some((w) => RECENT_WORDS.has(w));
   const byId = new Map(graph.symbols.map((s) => [s.id, s]));
   const inbound = new Map<string, Edge[]>();
   const outbound = new Map<string, Edge[]>();
@@ -272,14 +287,17 @@ export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs }:
       st.score += 3;
       addReason(s.id, "explicit-file");
     }
-    // recent changes are their own signal
-    if (changed.has(s.file)) {
+    // recent changes only boost files the task is already about (topical
+    // affinity or an explicit recent-work query). A dirty tree must not make
+    // every symbol in a touched file relevant on its own.
+    const affinity = matched > 0 || pathMatched > 0 || explicit;
+    if (changed.has(s.file) && (affinity || recentIntent)) {
       st.score += 1.2;
       addReason(s.id, "recent-change");
     }
     // kind/hub bonuses only when some lexical or change signal exists,
     // so unrelated queries stay empty instead of surfacing noise
-    const relevant = matched > 0 || pathMatched > 0 || explicit || changed.has(s.file);
+    const relevant = affinity || (recentIntent && changed.has(s.file));
     if (!relevant) continue;
     if (s.test) { st.score += 0.6; addReason(s.id, "test-match"); }
     if (s.kind === "route" || s.kind === "config" || s.kind === "entry") { st.score += 0.8; addReason(s.id, "entry-or-config"); }
@@ -365,7 +383,9 @@ export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs }:
       for (const hit of hits) {
         if (hit.kind !== "sym") continue;
         const s = graph.symbols[hit.rowid];
-        if (!s || seen.has(s.id)) continue;
+        // imports are evidence edges, never ranking targets — the bm25 lane
+        // must not re-admit them as hits
+        if (!s || s.kind === "import" || seen.has(s.id)) continue;
         out.push({ symbol: s, score: 0, reason: ["bm25"], conf: s.conf });
         seen.add(s.id);
       }

@@ -3,6 +3,8 @@ import type { Edge, SymbolFact } from "./facts";
 
 export interface ImpactReport {
   symbol?: SymbolFact;
+  ambiguous?: boolean;
+  candidates?: { id: string; file: string; line: number }[];
   callers: { symbol: string; file: string; line: number; conf: string }[];
   callees: { name: string; file: string; line: number; conf: string }[];
   relations: { kind: string; name: string; file: string; line: number; conf: string }[];
@@ -26,7 +28,11 @@ function edgeLoc(e: Edge): { file: string; line: number } {
 
 export function impact(b: BuildResult, symbolName?: string, diffOnly = false): ImpactReport {
   const byName = new Map<string, SymbolFact[]>();
-  for (const s of b.graph.symbols) byName.set(s.name, [...(byName.get(s.name) ?? []), s]);
+  const byId = new Map<string, SymbolFact>();
+  for (const s of b.graph.symbols) {
+    byName.set(s.name, [...(byName.get(s.name) ?? []), s]);
+    byId.set(s.id, s);
+  }
 
   const changedFiles = [...b.changed].sort();
 
@@ -45,8 +51,25 @@ export function impact(b: BuildResult, symbolName?: string, diffOnly = false): I
     return { callers: [], callees: [], relations: [], tests: [], changedFiles, changed: false };
   }
 
-  const cands = byName.get(symbolName);
+  // qualified id (file::name::line) is unambiguous
+  const byQualified = byId.get(symbolName);
+  const cands = byQualified ? [byQualified] : byName.get(symbolName);
   if (!cands) return { callers: [], callees: [], relations: [], tests: [], changedFiles, changed: false };
+
+  // never silently choose the first same-name symbol: an ambiguous bare name
+  // surfaces its candidates so the caller can qualify
+  if (cands.length > 1) {
+    return {
+      ambiguous: true,
+      candidates: cands.map((c) => ({ id: c.id, file: c.file, line: c.nameLine })),
+      callers: [],
+      callees: [],
+      relations: [],
+      tests: [],
+      changedFiles,
+      changed: false,
+    };
+  }
   const sym = cands[0];
   const id = sym.id;
 
@@ -88,6 +111,11 @@ export function renderImpact(r: ImpactReport, diffOnly: boolean): string {
     return lines.join("\n");
   }
   if (!r.symbol) {
+    if (r.ambiguous) {
+      lines.push("ambiguous name — pick a qualified id:");
+      for (const c of r.candidates ?? []) lines.push(`  ${c.id}  ${c.file}:${c.line}`);
+      return lines.join("\n");
+    }
     lines.push("symbol not found");
     lines.push(`changed files: ${r.changedFiles.length}`);
     return lines.join("\n");

@@ -3,7 +3,7 @@ import { build } from "../src/build";
 import { rankSymbols, explicitFilesFromTask } from "../src/query";
 import { buildBm25Index } from "../src/bm25";
 import { assemble } from "../src/assemble";
-import { renderCapsule } from "../src/render";
+import { renderCapsule, capsuleToJson } from "../src/render";
 
 const GO = new URL("./fixtures/go", import.meta.url).pathname;
 const TS = new URL("./fixtures/typescript", import.meta.url).pathname;
@@ -43,7 +43,24 @@ describe("prepare capsule", () => {
   test("budget truncates and stays bounded", async () => {
     const { capsule } = await prepare(GO, "where is session persistence handled?", 150);
     expect(capsule.truncated).toBe(true);
-    expect(capsule.tokensUsed).toBeLessThanOrEqual(150 + 120);
+    expect(capsule.tokensUsed).toBeLessThanOrEqual(150);
+  });
+
+  test("truthful budget: both renderings fit the declared budget", async () => {
+    const { capsule } = await prepare(GO, "where is session persistence handled?", 400);
+    expect(capsule.tokensUsed).toBeLessThanOrEqual(400);
+    expect(Math.ceil(capsuleToJson(capsule).length / 4)).toBeLessThanOrEqual(400);
+    expect(Math.ceil(renderCapsule(capsule).length / 4)).toBeLessThanOrEqual(400);
+  });
+
+  test("changed files land in a separate section, never in hits", async () => {
+    const b = await build(GO);
+    const changed = new Set(["cmd/migrate/migrate.go"]);
+    const bm25 = buildBm25Index(b.graph, b.docs);
+    const hits = rankSymbols({ task: "session", graph: b.graph, changed, explicitFiles: [], bm25 });
+    const capsule = assemble({ task: "session", build: b, hits, budgetTokens: 1200, changed });
+    expect(capsule.changed).toContain("cmd/migrate/migrate.go");
+    expect(capsule.hits.every((h) => h.file !== "cmd/migrate/migrate.go")).toBe(true);
   });
 
   test("deterministic output", async () => {

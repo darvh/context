@@ -6,9 +6,26 @@
       "query": "where is session persistence handled?",
       "type": "concept",
       "topK": 5,
-      "expectedFiles": ["internal/session/store.go"],
-      "expectedSymbols": ["OpenStore"],
-      "changed": []
+      "expectedFiles": [
+        "internal/session/store.go"
+      ],
+      "expectedSymbols": [
+        "OpenStore"
+      ],
+      "changed": [],
+      "directories": [
+        "internal/session"
+      ],
+      "edges": [
+        [
+          "OpenStore",
+          "Get"
+        ],
+        [
+          "OpenStore",
+          "main"
+        ]
+      ]
     },
     {
       "id": "g2",
@@ -16,8 +33,12 @@
       "query": "how does the server start and wire the session store?",
       "type": "concept",
       "topK": 5,
-      "expectedFiles": ["cmd/server/main.go"],
-      "expectedSymbols": ["main"],
+      "expectedFiles": [
+        "cmd/server/main.go"
+      ],
+      "expectedSymbols": [
+        "main"
+      ],
       "changed": []
     },
     {
@@ -26,8 +47,12 @@
       "query": "OpenStore",
       "type": "symbol",
       "topK": 3,
-      "expectedFiles": ["internal/session/store.go"],
-      "expectedSymbols": ["OpenStore"],
+      "expectedFiles": [
+        "internal/session/store.go"
+      ],
+      "expectedSymbols": [
+        "OpenStore"
+      ],
       "changed": []
     },
     {
@@ -36,7 +61,9 @@
       "query": "fix the bug in internal/session/store.go",
       "type": "path",
       "topK": 3,
-      "expectedFiles": ["internal/session/store.go"],
+      "expectedFiles": [
+        "internal/session/store.go"
+      ],
       "expectedSymbols": [],
       "changed": []
     },
@@ -46,8 +73,14 @@
       "query": "session persistence",
       "type": "concept",
       "topK": 5,
-      "expectedFiles": ["internal/session/store.go"],
-      "expectedSymbols": ["OpenStore", "Store", "Get"],
+      "expectedFiles": [
+        "internal/session/store.go"
+      ],
+      "expectedSymbols": [
+        "OpenStore",
+        "Store",
+        "Get"
+      ],
       "changed": []
     },
     {
@@ -56,8 +89,12 @@
       "query": "where does the app remember values after restart?",
       "type": "concept",
       "topK": 5,
-      "expectedFiles": ["internal/session/store.go"],
-      "expectedSymbols": ["OpenStore"],
+      "expectedFiles": [
+        "internal/session/store.go"
+      ],
+      "expectedSymbols": [
+        "OpenStore"
+      ],
       "changed": []
     },
     {
@@ -66,9 +103,22 @@
       "query": "http routes for session endpoints",
       "type": "concept",
       "topK": 5,
-      "expectedFiles": ["internal/http/routes.go"],
-      "expectedSymbols": ["NewHandler"],
-      "changed": []
+      "expectedFiles": [
+        "internal/http/routes.go"
+      ],
+      "expectedSymbols": [
+        "NewHandler"
+      ],
+      "changed": [],
+      "directories": [
+        "internal/http"
+      ],
+      "edges": [
+        [
+          "NewHandler",
+          "Get"
+        ]
+      ]
     },
     {
       "id": "g8",
@@ -76,9 +126,15 @@
       "query": "session store was recently changed, where do we touch it",
       "type": "change",
       "topK": 5,
-      "expectedFiles": ["internal/session/store.go"],
-      "expectedSymbols": ["Store"],
-      "changed": ["internal/session/store.go"]
+      "expectedFiles": [
+        "internal/session/store.go"
+      ],
+      "expectedSymbols": [
+        "Store"
+      ],
+      "changed": [
+        "internal/session/store.go"
+      ]
     },
     {
       "id": "t1",
@@ -86,9 +142,23 @@
       "query": "session persistence",
       "type": "concept",
       "topK": 5,
-      "expectedFiles": ["src/session/store.ts"],
-      "expectedSymbols": ["openStore", "Store"],
-      "changed": []
+      "expectedFiles": [
+        "src/session/store.ts"
+      ],
+      "expectedSymbols": [
+        "openStore",
+        "Store"
+      ],
+      "changed": [],
+      "directories": [
+        "src/session"
+      ],
+      "edges": [
+        [
+          "openStore",
+          "get"
+        ]
+      ]
     },
     {
       "id": "t2",
@@ -96,8 +166,12 @@
       "query": "which file wires express and the session store",
       "type": "concept",
       "topK": 5,
-      "expectedFiles": ["src/index.ts"],
-      "expectedSymbols": ["main"],
+      "expectedFiles": [
+        "src/index.ts"
+      ],
+      "expectedSymbols": [
+        "main"
+      ],
       "changed": []
     },
     {
@@ -106,8 +180,12 @@
       "query": "router exposes the session endpoints",
       "type": "concept",
       "topK": 5,
-      "expectedFiles": ["src/http/router.ts"],
-      "expectedSymbols": ["router"],
+      "expectedFiles": [
+        "src/http/router.ts"
+      ],
+      "expectedSymbols": [
+        "router"
+      ],
       "changed": []
     },
     {
@@ -116,8 +194,13 @@
       "query": "session persistence",
       "type": "concept",
       "topK": 5,
-      "expectedFiles": ["app/session/store.py"],
-      "expectedSymbols": ["open_store", "Store"],
+      "expectedFiles": [
+        "app/session/store.py"
+      ],
+      "expectedSymbols": [
+        "open_store",
+        "Store"
+      ],
       "changed": []
     },
     {
@@ -126,8 +209,12 @@
       "query": "flask routes for session endpoints",
       "type": "concept",
       "topK": 5,
-      "expectedFiles": ["app/api.py"],
-      "expectedSymbols": ["create_app"],
+      "expectedFiles": [
+        "app/api.py"
+      ],
+      "expectedSymbols": [
+        "create_app"
+      ],
       "changed": []
     },
     {
@@ -136,8 +223,14 @@
       "query": "MyClass",
       "type": "symbol",
       "topK": 5,
-      "expectedFiles": ["app.rb", "main.cpp", "main.dart"],
-      "expectedSymbols": ["MyClass"],
+      "expectedFiles": [
+        "app.rb",
+        "main.cpp",
+        "main.dart"
+      ],
+      "expectedSymbols": [
+        "MyClass"
+      ],
       "changed": []
     },
     {
@@ -146,9 +239,91 @@
       "query": "values are being lost when the process exits, find the store",
       "type": "concept",
       "topK": 5,
-      "expectedFiles": ["internal/session/store.go"],
-      "expectedSymbols": ["Store", "OpenStore"],
-      "changed": []
+      "expectedFiles": [
+        "internal/session/store.go"
+      ],
+      "expectedSymbols": [
+        "Store",
+        "OpenStore"
+      ],
+      "changed": [],
+      "directories": [
+        "internal/session"
+      ],
+      "edges": [
+        [
+          "Store",
+          "Get"
+        ]
+      ]
+    },
+    {
+      "id": "g-dirty-1",
+      "repo": "go",
+      "query": "where is session persistence handled?",
+      "type": "dirty-tree",
+      "topK": 5,
+      "expectedFiles": [
+        "internal/session/store.go"
+      ],
+      "expectedSymbols": [
+        "OpenStore"
+      ],
+      "changed": [
+        "cmd/migrate/migrate.go"
+      ],
+      "why": "dirty-tree: a changed file with zero topical affinity must not displace the session store",
+      "directories": [
+        "internal/session"
+      ]
+    },
+    {
+      "id": "g-dirty-2",
+      "repo": "go",
+      "query": "fix the bug in internal/session/store.go",
+      "type": "dirty-tree",
+      "topK": 3,
+      "expectedFiles": [
+        "internal/session/store.go"
+      ],
+      "expectedSymbols": [],
+      "changed": [
+        "cmd/migrate/migrate.go"
+      ],
+      "why": "dirty-tree: explicit path mention stays authoritative over unrelated dirty files"
+    },
+    {
+      "id": "t-dirty-1",
+      "repo": "typescript",
+      "query": "session persistence",
+      "type": "dirty-tree",
+      "topK": 5,
+      "expectedFiles": [
+        "src/session/store.ts"
+      ],
+      "expectedSymbols": [
+        "openStore"
+      ],
+      "changed": [
+        "src/http/router.ts"
+      ],
+      "why": "dirty-tree: a related changed file may boost but must not outrank the topical match",
+      "directories": [
+        "src/session"
+      ]
+    },
+    {
+      "id": "g-budget-1",
+      "repo": "go",
+      "query": "explain how the server wires the http handler to the session store so that values survive a restart and get written to the database file",
+      "type": "budget",
+      "topK": 5,
+      "expectedFiles": [
+        "internal/session/store.go"
+      ],
+      "expectedSymbols": [],
+      "changed": [],
+      "why": "budget: a verbose query with many hits must still serialize within the declared budget"
     }
   ]
 }

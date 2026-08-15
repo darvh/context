@@ -1,4 +1,6 @@
 import type { Capsule } from "./assemble";
+import { renderDirCard } from "./dirmap";
+import { estTokens } from "./tokens";
 
 /** Compact human rendering. Deterministic. */
 export function renderCapsule(c: Capsule): string {
@@ -9,6 +11,14 @@ export function renderCapsule(c: Capsule): string {
   lines.push(`working_tree: ${c.workingTree}`);
   lines.push(`budget: ${c.budgetTokens} tokens (used ~${c.tokensUsed}, estimated)`);
 
+  if (c.changed.length) {
+    lines.push(`\nchanged:`);
+    for (const f of c.changed) lines.push(`  - ${f}`);
+  }
+  if (c.dirs.length) {
+    lines.push(`\ndirectories:`);
+    for (const d of c.dirs) lines.push(renderDirCard(d));
+  }
   if (c.files.length) {
     lines.push(`\npaths:`);
     for (const f of c.files) lines.push(`  - ${f}`);
@@ -42,4 +52,11 @@ export function renderCapsule(c: Capsule): string {
 
 export function capsuleToJson(c: Capsule): string {
   return JSON.stringify(c, null, 2);
+}
+
+/** Serialized cost of the capsule in tokens, measured on the final form
+ *  (the exact renderings the CLI emits). The larger of the two, so both
+ *  text and JSON fit the budget. */
+export function serializedCost(c: Capsule): number {
+  return Math.max(estTokens(renderCapsule(c)), estTokens(capsuleToJson(c)));
 }
