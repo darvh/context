@@ -50,6 +50,8 @@ interface TaskResult {
   mrr: number;
   topFiles: string[];
   evidenceRecall: number;
+  unrelatedItems: number;
+  stepsToEvidence: number;
   outputTokens: number;
   budgetViolation: boolean;
 }
@@ -130,6 +132,17 @@ async function runVariant(name: string, tasks: Task[], taskDirs: Map<string, str
       topK.some((h) => h.symbol.file === file && h.symbol.span.sl <= sl && h.symbol.span.el >= el),
     );
     const evidenceRecall = evidence.length ? covered.length / evidence.length : 1;
+
+    // unrelated items: capsule hits driven ONLY by the dirty lane (recent-
+    // change as sole reason) and outside expectations — the pollution metric
+    // (0 = clean). Topically-related changed-file hits are by design.
+    const dirtyHits = capsule.hits.filter(
+      (h) => t.changed.includes(h.file) && !t.expectedFiles.includes(h.file) && h.reason.length === 1 && h.reason[0] === "recent-change",
+    ).length;
+    // calls-to-evidence: rank position (1-based) of the first expected file
+    const firstExpected = t.expectedFiles.find((f) => m.topFiles.includes(f));
+    const stepsToEvidence = firstExpected ? m.topFiles.indexOf(firstExpected) + 1 : Infinity;
+
     results.push({
       id: t.id,
       type: t.type,
@@ -142,6 +155,8 @@ async function runVariant(name: string, tasks: Task[], taskDirs: Map<string, str
       mrr: m.mrr,
       topFiles: m.topFiles,
       evidenceRecall,
+      unrelatedItems: dirtyHits,
+      stepsToEvidence,
       outputTokens,
       budgetViolation,
     });
@@ -161,6 +176,9 @@ function summarize(v: VariantResult) {
   console.log(`  recall@k files:   ${(mean((t) => t.recallFiles) * 100).toFixed(1)}%  (tasks with ≥1 relevant file in top-k: ${recallFiles}/${n})`);
   console.log(`  recall@k symbols: ${(mean((t) => t.recallSymbols) * 100).toFixed(1)}%`);
   console.log(`  evidence recall:  ${(mean((t) => t.evidenceRecall) * 100).toFixed(1)}%`);
+  console.log(`  unrelated items:  ${v.tasks.reduce((s, t) => s + t.unrelatedItems, 0)}  (dirty-file hits outside expectations; 0 = clean)`);
+  const steps = v.tasks.filter((t) => Number.isFinite(t.stepsToEvidence)).map((t) => t.stepsToEvidence);
+  console.log(`  calls-to-evidence: ${steps.length ? (steps.reduce((s, x) => s + x, 0) / steps.length).toFixed(2) : "-"} avg rank of first expected file`);
   console.log(`  mrr:              ${mean((t) => t.mrr).toFixed(3)}`);
   console.log(`  serialized tokens: ${Math.round(mean((t) => t.outputTokens))} avg/task  budget ${BUDGET_TOKENS}  violations ${budgetViolations}/${n}`);
   console.log(`  cold latency:     p50 ${c50.toFixed(0)}ms  p95 ${c95.toFixed(0)}ms`);

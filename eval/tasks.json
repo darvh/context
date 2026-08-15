@@ -445,6 +445,21 @@
       ],
       "changed": [],
       "why": "artifact lane: env vars are first-class config symbols"
+    },
+    {
+      "id": "t-strings-1",
+      "repo": "typescript",
+      "query": "where does the server log when it starts listening",
+      "type": "strings",
+      "topK": 5,
+      "expectedFiles": [
+        "src/index.ts"
+      ],
+      "expectedSymbols": [
+        "main"
+      ],
+      "changed": [],
+      "why": "runtime strings: a body string literal must match lexically without embeddings"
     }
   ]
 }

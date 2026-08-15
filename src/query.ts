@@ -252,7 +252,7 @@ function symTermsFor(s: SymbolFact, graph: Graph): Set<string> {
   }
   let t = m.get(s.id);
   if (!t) {
-    t = new Set([...terms(s.name), ...terms(s.sig), ...terms(s.doc)]);
+    t = new Set([...terms(s.name), ...terms(s.sig), ...terms(s.doc), ...(s.strings ?? []).flatMap(terms)]);
     m.set(s.id, t);
   }
   return t;
@@ -286,6 +286,7 @@ const NEG_TESTS = /(?:not|no|excluding|without|ignore)\s+(?:the\s+)?(?:unit\s+)?
 const NEG_PRODUCTION = /\bproduction\b/i;
 const NEG_LEGACY = /without\s+(?:the\s+)?legacy/i;
 const ONLY_CONFIG = /\bonly\s+(?:the\s+)?config/i;
+const SCOPE_UNDER = /\bunder\s+([a-zA-Z0-9_./-]+)/i;
 
 // explicit history intent: gates the git co-change lane (never affects
 // ordinary topical retrieval)
@@ -426,13 +427,15 @@ export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs, c
   const negTests = NEG_TESTS.test(task) || NEG_PRODUCTION.test(task);
   const negLegacy = NEG_LEGACY.test(task);
   const onlyConfig = ONLY_CONFIG.test(task);
-  if (negTests || negLegacy || onlyConfig) {
+  const scopeUnder = SCOPE_UNDER.exec(task)?.[1];
+  if (negTests || negLegacy || onlyConfig || scopeUnder) {
     for (const [id, st] of state) {
       const s = byId.get(id);
       if (!s) continue;
       if (negTests && s.test) st.score *= 0.05;
       if (negLegacy && /legacy/i.test(s.file)) st.score *= 0.2;
       if (onlyConfig && s.kind !== "config") st.score *= 0.4;
+      if (scopeUnder && !s.file.startsWith(scopeUnder.replace(/\/$/, "") + "/")) st.score *= 0.3;
     }
   }
 

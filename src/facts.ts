@@ -35,6 +35,9 @@ export interface SymbolFact {
   test: boolean;
   doc: string;
   conf: Confidence;
+  /** bounded runtime strings from the symbol body (literals), for lexical
+   *  matching of error/config/log strings the name/sig/doc cannot see */
+  strings?: string[];
 }
 
 export type EdgeKind = "call" | "import" | "inherit" | "implement" | "ref" | "contain" | "test";

@@ -10,6 +10,7 @@ import { buildDocLinks, type DocLink } from "./links";
 import { loadOverlay, mergeOverlay } from "./overlay";
 import { loadScipIndex } from "./scip";
 import { extractArtifacts } from "./artifacts";
+import { attachRuntimeStrings } from "./strings";
 import { resolveFacts } from "./resolve";
 import { scan, type ScanOpts } from "./scan";
 
@@ -85,6 +86,10 @@ export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResu
   // typed artifact facts: env vars + config keys as first-class config symbols
   const artifacts = await extractArtifacts(s.tree, s.files);
   if (artifacts.length) graph = { ...graph, symbols: [...graph.symbols, ...artifacts] };
+  // runtime strings: bounded string literals from each symbol's body, so a
+  // query quoting an error/log/config string matches lexically ("connection
+  // refused", "listening :8080")
+  await attachRuntimeStrings(s.tree, graph);
   const resolveMs = performance.now() - t2;
 
   // docs lane: non-code files -> extracted text for BM25/semantic indexing.
