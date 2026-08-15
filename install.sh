@@ -3,14 +3,14 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/darvh/context/main/install.sh | bash
 #   bash install.sh [--local] [--targets <agents>] [--version <tag>]
-#                   [--force] [--dry-run] [--hooks]
+#                   [--no-force] [--dry-run] [--no-hooks]
 
 set -euo pipefail
 
 mode="global"
 targets="all"
 version=""
-force=0
+force=1 # installer intent: bring installed copies up to date; --no-force opts out
 dry_run=0
 hooks=1 # hooks install by default; --no-hooks opts out
 while [[ $# -gt 0 ]]; do
@@ -21,6 +21,7 @@ while [[ $# -gt 0 ]]; do
     --version) version="${2:-}"; shift ;;
     --version=*) version="${1#--version=}" ;;
     --force) force=1 ;;
+    --no-force) force=0 ;;
     --dry-run) dry_run=1 ;;
     --hooks) hooks=1 ;;
     --no-hooks) hooks=0 ;;
@@ -66,15 +67,17 @@ acquire_source() {
   source_dir="$tmp_dir/source"
 }
 
-# Self-testing launcher: try the compiled binary; if the host cannot execute it
-# (wrong arch, missing loader, killed), fall back to the Bun source entrypoint.
-# Shared template lives in scripts/build/mk-launcher.sh so the installer and its tests
-# use one source of truth.
+# Self-testing launcher: global installs try the compiled binary and fall
+# back to the Bun source entrypoint if the host cannot execute it; local
+# installs are source-first (the checkout is the install). Shared template
+# lives in scripts/build/mk-launcher.sh so the installer and its tests use
+# one source of truth.
 write_launcher() {
   local root="$1"
-  local mk="${source_dir}/scripts/mk-launcher.sh"
-  if [[ ! -f "$mk" ]]; then mk="$root/scripts/mk-launcher.sh"; fi
-  bash "$mk" "$root" "$bin_dir"
+  local mode="${2:-global}"
+  local mk="${source_dir}/scripts/build/mk-launcher.sh"
+  if [[ ! -f "$mk" ]]; then mk="$root/scripts/build/mk-launcher.sh"; fi
+  bash "$mk" "$root" "$bin_dir" "$mode"
 }
 
 install_from_source() {
@@ -100,12 +103,19 @@ install_from_source() {
   init_args+=(--create) # installer creates absent home-scope agent dirs
   [[ "$dry_run" == 1 ]] && init_args+=(--dry-run)
   [[ "$hooks" == 0 ]] && init_args+=(--no-hooks)
-  # run init with the COMPILED binary so hook commands self-host
-  # ("<binary>" hook-user) — the installed system needs no bun or node
-  if [[ -x "$install_root/dist/context" ]]; then
+  # run init from the current source: the installed dist may be a stale
+  # release build, and local mode means "from this checkout". The global
+  # install just rebuilt dist/context, so its binary is fresh — it self-hosts
+  # the hook commands ("<binary>" hook-user) so the installed system needs
+  # no bun or node.
+  if [[ "$mode" == "local" ]]; then
+    bun run "$source_dir/src/cli.ts" init "${init_args[@]}"
+    # point PATH `context` at the checkout so the command is never stale
+    write_launcher "$source_dir" local
+  elif [[ -x "$install_root/dist/context" ]]; then
     "$install_root/dist/context" init "${init_args[@]}"
   else
-    bun run "$runtime_root/src/cli/cli.ts" init "${init_args[@]}"
+    bun run "$runtime_root/src/cli.ts" init "${init_args[@]}"
   fi
 }
 

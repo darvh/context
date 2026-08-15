@@ -3,6 +3,7 @@ import type { Ctx } from "./core";
 import { addSym, childField, refEdge, walk, classifyFile, promoteKinds, addCallEdges } from "./core";
 import { TEST_IDENTS } from "./rules";
 
+
 function collectTypeSymbols(ctx: Ctx, typeDecl: Node, fileIsTest: boolean) {
   for (let i = 0; i < typeDecl.namedChildCount; i++) {
     const spec = typeDecl.namedChild(i);

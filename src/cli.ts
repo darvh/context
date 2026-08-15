@@ -1,17 +1,17 @@
 import path from "node:path";
-import { build } from "../out/build";
-import { rankSymbols, explicitFilesFromTask, queryConfidence, fuseFileHits } from "../rank/query";
-import { assemble, type Capsule } from "../out/assemble";
-import { renderCapsule, capsuleToJson } from "../out/render";
-import { resolveExpand, renderExpanded } from "../out/expand";
-import { impact, renderImpact, type ImpactReport } from "../out/impact";
-import { changedFiles, coChangedFiles } from "../graph/diff";
-import { lastCapsulePath, writeJson, repoKey, readJson, sessionStatePath } from "../core/cache";
-import { buildBm25Index } from "../rank/bm25";
-import { appendSemanticHits } from "../rank/query";
-import { estTokens } from "../core/tokens";
-import { buildInfo } from "./version";
-import type { ScanOpts } from "../graph/scan";
+import { build } from "./out/build";
+import { rankSymbols, explicitFilesFromTask, queryConfidence, fuseFileHits } from "./rank/query";
+import { assemble, type Capsule } from "./out/assemble";
+import { renderCapsule, capsuleToJson } from "./out/render";
+import { resolveExpand, renderExpanded } from "./out/expand";
+import { impact, renderImpact, type ImpactReport } from "./out/impact";
+import { changedFiles, coChangedFiles } from "./graph/diff";
+import { lastCapsulePath, writeJson, repoKey, readJson, sessionStatePath } from "./core/cache";
+import { buildBm25Index } from "./rank/bm25";
+import { appendSemanticHits } from "./rank/query";
+import { estTokens } from "./core/tokens";
+import { buildInfo } from "./cli/version";
+import type { ScanOpts } from "./graph/scan";
 
 const HELP = `context — deterministic discovery compiler
 
@@ -105,7 +105,7 @@ async function cmdPrepare(args: Args) {
   let semStats: { model: string; hits: number; dirs: number; ms: number } | undefined;
   const conf = queryConfidence(hits);
   if (conf === "weak" || conf === "empty") {
-    const sem = await import("../rank/semantic");
+    const sem = await import("./rank/semantic");
     if (await sem.semanticEnabled()) {
       const t1 = performance.now();
       // the semantic lane runs in the compiled runtime too: the onnxruntime
@@ -155,7 +155,7 @@ async function cmdExpand(args: Args) {
     process.exit(1);
   }
   // capsule + file:line handles are repo-relative: resolve against the walked root
-  const root = (await (await import("../graph/scan")).findRoot(args.root)) ?? args.root;
+  const root = (await (await import("./graph/scan")).findRoot(args.root)) ?? args.root;
   const e = await resolveExpand(root, handle);
   if (!e) {
     console.error("context: no such handle (run `context prepare` first, or pass file:line)");
@@ -192,7 +192,7 @@ async function cmdMap(args: Args) {
   }
   const b = await build(args.root, args.scan);
   const dirArg = arg.endsWith("/") ? arg.slice(0, -1) : arg;
-  const { mapDir } = await import("../graph/repo-map");
+  const { mapDir } = await import("./graph/repo-map");
   const { blocks, truncated } = mapDir(b, dirArg);
   const out: string[] = [];
   if (!blocks.length) {
@@ -217,7 +217,7 @@ async function cmdFollow(args: Args) {
     process.exit(1);
   }
   const b = await build(args.root, args.scan);
-  const { follow, renderFollow, connectSeeds, renderConnections, EDGE_KINDS, resolveSymbol } = await import("../out/follow");
+  const { follow, renderFollow, connectSeeds, renderConnections, EDGE_KINDS, resolveSymbol } = await import("./out/follow");
   // two symbols: render the minimal connecting subgraph instead of trails
   const second = args.rest[1];
   if (second && !(EDGE_KINDS as readonly string[]).includes(second)) {
@@ -264,13 +264,13 @@ async function cmdInit(args: Args, rest: string[]) {
   }
   const hooks = !noHooks; // hooks install by default; --no-hooks opts out
   const only = targets === "all" ? [] : targets.split(",").map((s) => s.trim()).filter(Boolean);
-  const { init, agentPaths, AGENT_NAMES } = await import("./init");
+  const { init, agentPaths, AGENT_NAMES } = await import("./cli/init");
   const unknown = only.filter((n) => !AGENT_NAMES.includes(n));
   if (unknown.length) {
     console.error(`context: unknown --targets: ${unknown.join(", ")} (known: ${AGENT_NAMES.join(", ")})`);
     process.exit(1);
   }
-  const repo = project ? (await (await import("../graph/scan")).findRoot(args.root)) ?? args.root : "";
+  const repo = project ? (await (await import("./graph/scan")).findRoot(args.root)) ?? args.root : "";
   console.log(`context init (targets: ${targets}, ${project ? "project" : "user"} scope${hooks ? ", hooks" : ", no hooks (--no-hooks)"}${noInstructions ? ", no instructions (--no-instructions)" : ""})`);
   for (const r of await init({ project, repo, force, dryRun, only, hooks, instructions: !noInstructions, create })) {
     const note = r.note ? ` ${r.note}` : "";
@@ -281,7 +281,7 @@ async function cmdInit(args: Args, rest: string[]) {
 }
 
 async function cmdConfig(rest: string[]) {
-  const { readConfig, setConfig, CONFIG_KEYS } = await import("./config");
+  const { readConfig, setConfig, CONFIG_KEYS } = await import("./cli/config");
   const op = rest[0];
   if (op === "get") {
     const cfg = await readConfig();
@@ -380,7 +380,7 @@ async function cmdHook(kind: string, rest: string[]) {
     // hook adapters fail open; malformed host input must not block the agent
   }
   if (kind === "hook-user") {
-    const { runHook } = await import("../hooks/user");
+    const { runHook } = await import("./hooks/user");
     const task = String(input.prompt ?? input.message ?? input.user_prompt ?? "");
     const cwd = String(input.cwd ?? input.workspace ?? process.cwd());
     const sessionId = typeof input.session_id === "string" ? input.session_id : undefined;
@@ -388,14 +388,14 @@ async function cmdHook(kind: string, rest: string[]) {
     return;
   }
   if (kind === "hook-edit") {
-    const { runEditHook } = await import("../hooks/edit");
+    const { runEditHook } = await import("./hooks/edit");
     // --text prints the blast radius alone (plain stdout) for hosts without a
     // hook-JSON channel (the opencode plugin); the hook shape stays the default.
     const text = rest.includes("--text");
     await runEditHook(input as { tool_input?: { file_path?: string; command?: string }; hook_event_name?: string; cwd?: string }, { exit: true, text });
     return;
   }
-  const { sessionOrientation } = await import("../hooks/session");
+  const { sessionOrientation } = await import("./hooks/session");
   const cwd = String(input.cwd ?? input.workspace ?? process.cwd());
   // JSON hook shape: additionalContext injects into the session on both Claude
   // Code and Codex SessionStart (both accept hookSpecificOutput JSON)
@@ -404,7 +404,7 @@ async function cmdHook(kind: string, rest: string[]) {
 }
 
 async function cmdStatusline() {
-  const { main } = await import("../hooks/statusline");
+  const { main } = await import("./hooks/statusline");
   await main();
 }
 

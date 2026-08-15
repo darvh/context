@@ -1,6 +1,7 @@
 import type { Node } from "../core/parse";
 import type { Ctx } from "./core";
 import { addSym, classifyFile, promoteKinds } from "./core";
+import { TEST_IDENTS } from "./rules";
 import { RG_DECL, RG_IMPORT_RES, rgKindFromLine } from "./rules";
 
 function lineNode(row: number, line: string): Node {

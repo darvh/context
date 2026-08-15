@@ -1,7 +1,7 @@
 import type { Node } from "../core/parse";
 import type { Ctx } from "./core";
 import { addSym, childField, refEdge, walk, classifyFile, promoteKinds, addCallEdges, addRouteSymbol, isRouteCall } from "./core";
-import { TEST_IDENTS } from "./rules";
+import { TEST_IDENTS as SHARED_TEST_IDENTS } from "../core/rules";
 
 function isExported(n: Node): boolean {
   let cur: Node | null = n;
@@ -145,7 +145,7 @@ export function extractTsJs(root: Node, ctx: Ctx) {
       case "call_expression": {
         if (n.namedChild(0)?.type === "identifier") {
           const fname = n.namedChild(0)!.text;
-          if (TEST_IDENTS.ts.has(fname) && fileIsTest) {
+          if (SHARED_TEST_IDENTS.has(fname) && fileIsTest) {
             collectTestDecl(ctx, n, "");
           }
         }

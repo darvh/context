@@ -80,18 +80,18 @@ bash scripts/smoke.sh ./dist/context   # clean-environment smoke suite
 
 The authoritative lane fuses graph relationships, changed-file, explicit-path, entry-point, and exact-name signals; BM25 and the optional semantic lane append below, never re-rank. Each hit's `reason` lists the signals that matched.
 
-- **Graph + lexical** (`src/query.ts`): symbol terms are name + signature + doc + path + bounded **runtime strings** from the symbol body (so a query quoting an error/log/config string matches lexically) + **irregular-form expansion** (`kept` → `keep`). Propagation is 2-hop, degree-capped; imports are evidence edges, never ranking targets.
+- **Graph + lexical** (`src/rank/query.ts`): symbol terms are name + signature + doc + path + bounded **runtime strings** from the symbol body (so a query quoting an error/log/config string matches lexically) + **irregular-form expansion** (`kept` → `keep`). Propagation is 2-hop, degree-capped; imports are evidence edges, never ranking targets.
 - **Intent-gated lanes** (only fire when the task asks):
   - *diagnostic-first*: a task naming a failing test verbatim pins it (`test-name-pin`), stack `file:line` refs are explicit-file pins;
   - *negative constraints*: "not tests", "without legacy", "only config under X" penalize the excluded scope before propagation;
   - *recent-change*: only boosts files the task is already about (or an explicit recent-work query); dirty files live in a bounded `changed` section, separate from relevance;
   - *co-change*: for explicit history/regression intent, files that changed together in the last commits boost each other;
   - *session-delta*: symbols already shown this task session get a novelty penalty (disposable per-tree state, no profiling).
-- **BM25** (`src/bm25.ts`): SQLite FTS5/BM25, porter-stemmed, one row per symbol plus one row per non-code document *section*.
-- **Typed artifacts** (`src/artifacts.ts`): env vars (`process.env.X`, `os.Getenv(...)`, `ENV[...]`, ...) and config keys (`config.get("key")`) become first-class config symbols, so `DATABASE_URL` resolves exactly.
-- **Docs lane** (`src/doc.ts`): non-code files (markdown/text read directly; Word/Excel/PowerPoint/OpenDocument/RTF/EPUB/PDF converted by `@firecrawl/anydoc` — a local Rust core, no LLM, no network) are indexed by their extracted text. Long documents are split into bounded sections (headings / paragraph runs, ≤4KB each, ≤40 per doc) that carry their source start and end line, so a 25KB file cannot bury its answer and `context expand` lands on the section that matched (a doc hit's range covers the whole section; binary formats expand from the cached extracted Markdown, never raw bytes). They never enter the symbol graph; a matching doc carries a real BM25 score so a documentation query surfaces its document.
-- **Code↔doc links** (`src/links.ts`): exact-token/path mentions of exported symbols in document sections produce deterministic links; `impact` shows `documented_by`.
-- **Compiler-backed overlay** (`src/overlay.ts`, `src/scip.ts`): a binary SCIP index (`index.scip`) or a documented JSON facts file (`.context/facts.json`) merges into the tree-sitter graph — exact definitions, references, and implementations upgrade confidence. Tree-sitter behavior is unchanged when no overlay exists; Context never generates indexes itself.
+- **BM25** (`src/rank/bm25.ts`): SQLite FTS5/BM25, porter-stemmed, one row per symbol plus one row per non-code document *section*.
+- **Typed artifacts** (`src/out/artifacts.ts`): env vars (`process.env.X`, `os.Getenv(...)`, `ENV[...]`, ...) and config keys (`config.get("key")`) become first-class config symbols, so `DATABASE_URL` resolves exactly.
+- **Docs lane** (`src/core/doc.ts`): non-code files (markdown/text read directly; Word/Excel/PowerPoint/OpenDocument/RTF/EPUB/PDF converted by `@firecrawl/anydoc` — a local Rust core, no LLM, no network) are indexed by their extracted text. Long documents are split into bounded sections (headings / paragraph runs, ≤4KB each, ≤40 per doc) that carry their source start and end line, so a 25KB file cannot bury its answer and `context expand` lands on the section that matched (a doc hit's range covers the whole section; binary formats expand from the cached extracted Markdown, never raw bytes). They never enter the symbol graph; a matching doc carries a real BM25 score so a documentation query surfaces its document.
+- **Code↔doc links** (`src/graph/links.ts`): exact-token/path mentions of exported symbols in document sections produce deterministic links; `impact` shows `documented_by`.
+- **Compiler-backed overlay** (`src/graph/overlay.ts`, `src/graph/scip.ts`): a binary SCIP index (`index.scip`) or a documented JSON facts file (`.context/facts.json`) merges into the tree-sitter graph — exact definitions, references, and implementations upgrade confidence. Tree-sitter behavior is unchanged when no overlay exists; Context never generates indexes itself.
 
 ### Budget-aware packing
 
@@ -120,7 +120,7 @@ Note: the semantic lane runs in both runtimes. The compiled binary embeds the on
 
 ## Cache
 
-Cache lives in `$XDG_CACHE_HOME/context` (default `~/.cache/context`). Every cache/capsule/hook/semantic file is keyed by the canonical path of the directory actually walked — the git repo root when a hook maps the whole repo, otherwise the exact cwd/`--root` — so two checkouts, two sibling non-repo dirs, or two agent accounts never collide, and a non-repo directory never shares state with any other (`src/cache.ts`). Cache writes are atomic (unique temp files) and fail-open: an unwritable cache directory never fails a request. Incremental: only changed files reparse; extracted documents are reused by CONTENT identity — a (size, mtime) match is only trusted when the content hash agrees, so same-size or timestamp-preserving edits cannot leave stale text. Parsing, document conversion, and embedding batches are bounded by timeouts and fail open, so a slow converter or model never hangs a command. Working-tree edits (staged, unstaged, untracked) are visible on the next call.
+Cache lives in `$XDG_CACHE_HOME/context` (default `~/.cache/context`). Every cache/capsule/hook/semantic file is keyed by the canonical path of the directory actually walked — the git repo root when a hook maps the whole repo, otherwise the exact cwd/`--root` — so two checkouts, two sibling non-repo dirs, or two agent accounts never collide, and a non-repo directory never shares state with any other (`src/core/cache.ts`). Cache writes are atomic (unique temp files) and fail-open: an unwritable cache directory never fails a request. Incremental: only changed files reparse; extracted documents are reused by CONTENT identity — a (size, mtime) match is only trusted when the content hash agrees, so same-size or timestamp-preserving edits cannot leave stale text. Parsing, document conversion, and embedding batches are bounded by timeouts and fail open, so a slow converter or model never hangs a command. Working-tree edits (staged, unstaged, untracked) are visible on the next call.
 
 Git is optional: without a git binary every lane fails open (no changed context, `git_head` omitted, co-change dormant) and retrieval is unaffected.
 
@@ -163,7 +163,7 @@ Wiring is per-host, matching what each agent actually supports:
 
 There is no Stop/agent hook: Claude Code does not render Stop output, and the session token savings already live in the statusline, so the per-turn line was removed.
 
-Savings projection (`src/savings.ts`) estimates the input tokens the capsule replaces — the whole files its hits point at, capped (≤4 files, ≤4KB each, ≤12KB total) minus capsule tokens, labeled `estimated` everywhere. The runtime decision (Bun over Rust) is recorded in the commit history; the retrieval baseline lives in `eval/`. Retrieval results on pinned real revisions are reproducible via `bun run eval -- real`; agent-task (end-to-end) usefulness measurement is the next step, not yet claimed.
+Savings projection (`src/out/savings.ts`) estimates the input tokens the capsule replaces — the whole files its hits point at, capped (≤4 files, ≤4KB each, ≤12KB total) minus capsule tokens, labeled `estimated` everywhere. The runtime decision (Bun over Rust) is recorded in the commit history; the retrieval baseline lives in `eval/`. Retrieval results on pinned real revisions are reproducible via `bun run eval -- real`; agent-task (end-to-end) usefulness measurement is the next step, not yet claimed.
 
 See `skill/SKILL.md` for the host-neutral agent skill.
 

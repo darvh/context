@@ -45,16 +45,50 @@ export const SCOPE_UNDER = /\bunder\s+([a-zA-Z0-9_./-]+)/i;
 export const WEAK_BASE_SCORE = 5;
 export const AUTHORITATIVE_REASONS = ["explicit-file", "recent-change", "basename-match"];
 
-// generic test framework scaffolding: evidence, not targets
-export const GENERIC_TEST = new Set(["it", "test", "describe", "expect", "beforeeach", "aftereach", "beforeall", "afterall"]);
+// generic test framework scaffolding: evidence, not targets (both casing
+// spellings: extraction marks camelCase idents, ranking demotes both)
+export const TEST_IDENTS = new Set([
+  "it", "test", "describe", "expect",
+  "beforeeach", "aftereach", "beforeall", "afterall",
+  "beforeEach", "afterEach", "beforeAll", "afterAll",
+]);
 
 // queries asking for prose answers ("where is X documented"): the best
 // matching doc may lead the ranking instead of sitting below the code
 export const DOC_INTENT = /(documentation|docs?|guide|manual|reference|tutorial|readme)/i;
 
+// language-specific test-file patterns, previously inline per extractor
+// (extract/rules.ts FILE_PATTERNS.test). Shared so extraction and ranking
+// never disagree on what counts as a test file.
+const TEST_FILE_PATTERNS: Record<string, { test: RegExp; testAlt?: RegExp }> = {
+  ts: { test: /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/ },
+  js: { test: /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/ },
+  py: { test: /(^|\/)test_.*\.py$|(^|\/)tests?\// },
+  go: { test: /_test\.go$/ },
+  rg: { test: /(^|\/)(test|tests|spec|__tests__|_test)(\/|\.|_)/i, testAlt: /\.(test|spec)_/i },
+  java: { test: /(^|\/)(Test.*|.*Test)\.java$|(^|\/)tests?\// },
+  rb: { test: /(_test|_spec)\.rb$|(^|\/)(test|spec)\// },
+  rs: { test: /(^|\/)tests?\//, testAlt: /_test\.rs$/i },
+  php: { test: /Test\.php$|(^|\/)tests?\// },
+  c: { test: /_test\.c$|(^|\/)(test|tests)\// },
+  cpp: { test: /_test\.(cpp|cc)$|(^|\/)(test|tests)\// },
+  cs: { test: /Test\.cs$|(^|\/)tests?\// },
+  kt: { test: /Test\.kt$|(^|\/)tests?\// },
+  swift: { test: /Test\.swift$|(^|\/)Tests\// },
+  sh: { test: /_test\.sh$|(^|\/)tests?\// },
+  lua: { test: /_test\.lua$|(^|\/)tests?\// },
+  scala: { test: /Test\.scala$|Spec\.scala$|(^|\/)tests?\// },
+  dart: { test: /_test\.dart$|(^|\/)tests?\// },
+};
+
 /** Test-file detection by path segment: tests/ dir, *_test.go, test_*.py,
- *  conftest.py, *.spec.*. "testing.py" (production code) is NOT a test file. */
-export function isTestFile(file: string): boolean {
+ *  conftest.py, *.spec.*. "testing.py" (production code) is NOT a test file.
+ *  When a language is known, its precise pattern is checked first. */
+export function isTestFile(file: string, lang?: string): boolean {
+  if (lang) {
+    const p = TEST_FILE_PATTERNS[lang];
+    if (p && (p.test.test(file) || (p.testAlt && p.testAlt.test(file)))) return true;
+  }
   return file.split("/").some(
     (seg) =>
       seg === "test" ||

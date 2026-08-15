@@ -15,7 +15,7 @@ import {
   SCOPE_UNDER,
   WEAK_BASE_SCORE,
   AUTHORITATIVE_REASONS,
-  GENERIC_TEST,
+  TEST_IDENTS,
   DOC_INTENT,
   isTestFile,
   expandIrregular,
@@ -587,7 +587,7 @@ export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs, c
     const hub = (inbound.get(s.id)?.length ?? 0) + (outbound.get(s.id)?.length ?? 0);
     st.score += Math.min(hub, 30) * 0.04;
     // dampen generic test scaffolding and anonymous short vars as own targets
-    if (s.test && GENERIC_TEST.has(s.name)) st.score *= 0.2;
+    if (s.test && TEST_IDENTS.has(s.name)) st.score *= 0.2;
     else if (s.name.length <= 2 && (s.kind === "const" || s.kind === "var" || s.kind === "test")) st.score *= 0.5;
     if (matched === 0 && s.name.length <= 4 && (s.kind === "const" || s.kind === "var" || s.test)) st.score *= 0.4;
   }

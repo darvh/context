@@ -96,13 +96,28 @@ describe("installer launcher", () => {
     expect(err).toContain("falling back to source");
     await fs.rm(root, { recursive: true, force: true });
   });
+
+  test("local mode: source-first even when a stale dist is runnable", async () => {
+    const root = path.join(REPO, "var", "launch-" + Date.now());
+    const bin = path.join(root, "bin");
+    await fs.mkdir(path.join(root, "dist"), { recursive: true });
+    await fs.mkdir(path.join(root, "src"), { recursive: true });
+    await fs.writeFile(path.join(root, "dist", "context"), "#!/usr/bin/env bash\necho STALE-BINARY\n", { mode: 0o755 });
+    await fs.writeFile(path.join(root, "src", "cli.ts"), "console.log('CHECKOUT-SOURCE-RAN');\n");
+    await run(["bash", MK_LAUNCHER, root, bin, "local"], REPO);
+    const { code, out } = await run([path.join(bin, "context")], REPO);
+    expect(code).toBe(0);
+    expect(out).toContain("CHECKOUT-SOURCE-RAN");
+    expect(out).not.toContain("STALE-BINARY");
+    await fs.rm(root, { recursive: true, force: true });
+  });
 });
 
 describe("--targets validation", () => {
   test("unknown agent name fails with a clear error", async () => {
     const proj = projDir();
     await fs.mkdir(proj, { recursive: true });
-    const { code, err } = await run(["bun", "run", "src/cli/cli.ts", "init", "--project", "--root", proj, "--targets", "bogus"], REPO);
+    const { code, err } = await run(["bun", "run", "src/cli.ts", "init", "--project", "--root", proj, "--targets", "bogus"], REPO);
     expect(code).toBe(1);
     expect(err).toContain("unknown --targets: bogus");
     await fs.rm(proj, { recursive: true, force: true });
@@ -111,7 +126,7 @@ describe("--targets validation", () => {
   test("known target passes", async () => {
     const proj = projDir();
     await fs.mkdir(proj, { recursive: true });
-    const { code } = await run(["bun", "run", "src/cli/cli.ts", "init", "--project", "--root", proj, "--targets", "opencode"], REPO);
+    const { code } = await run(["bun", "run", "src/cli.ts", "init", "--project", "--root", proj, "--targets", "opencode"], REPO);
     expect(code).toBe(0);
     await fs.rm(proj, { recursive: true, force: true });
   });

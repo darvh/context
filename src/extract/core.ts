@@ -7,6 +7,7 @@ import {
   type SymbolFact,
 } from "../core/facts";
 import { DOC_CLEAN_RE, DOC_LINE_RE, ENTRY_SYMBOL_RULES, FILE_PATTERNS, ROUTE_RULES, SIG_LANG_SPECIAL, SIG_STOPS } from "./rules";
+import { isTestFile } from "../core/rules";
 
 export interface Ctx {
   file: string;
@@ -134,7 +135,7 @@ export function refEdge(ctx: Ctx, fromId: string, n: Node, name: string, kind: E
 
 export function classifyFile(file: string, lang: string): { isTest: boolean; isEntry: boolean; isConfig: boolean } {
   const rules = FILE_PATTERNS[lang] ?? FILE_PATTERNS.rg;
-  const isTest = rules.test.test(file) || (rules.testAlt ? rules.testAlt.test(file) : false);
+  const isTest = isTestFile(file, lang);
   const isEntry = rules.entry.test(file);
   const isConfig = rules.config.test(file);
   return { isTest, isEntry, isConfig };

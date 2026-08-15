@@ -21,7 +21,8 @@ export function grammarDir(): string {
       return path.join(path.dirname(exe), 'grammars') + '/';
     }
   } catch {}
-  return path.join(import.meta.dir, '..', 'node_modules') + '/';
+  // src/core/lang.ts in dev: node_modules is two levels up
+  return path.join(import.meta.dir, '..', '..', 'node_modules') + '/';
 }
 
 const DIR = grammarDir();
