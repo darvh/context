@@ -1,5 +1,5 @@
-import type { BuildResult } from "./build";
-import type { RankedHit } from "./query";
+import type { BuildResult } from "../out/build";
+import type { RankedHit } from "../rank/query";
 
 /** DirMap: Observe L0. Compact directory cards derived from the scan, symbols,
  *  edges, tests, and docs — no prose, no LLM. Ranked per task by aggregated

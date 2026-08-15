@@ -1,8 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { SymbolFact } from "./facts";
-import { langFor, rgLangFor } from "./lang";
-import { makeId } from "./facts";
+import type { SymbolFact } from "../core/facts";
+import { langFor, rgLangFor } from "../core/lang";
+import { makeId } from "../core/facts";
 
 /** Typed artifact facts: environment variables and config keys mentioned in
  *  code become first-class config symbols, so "DATABASE_URL" or "the cache

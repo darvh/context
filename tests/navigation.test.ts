@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { build } from "../src/build";
-import { impact, renderImpact } from "../src/impact";
-import { follow, renderFollow } from "../src/follow";
-import { mapDir } from "../src/repo-map";
-import { buildDirCards, rankDirCards } from "../src/dirmap";
-import { rankSymbols } from "../src/query";
+import { build } from "../src/out/build";
+import { impact, renderImpact } from "../src/out/impact";
+import { follow, renderFollow } from "../src/out/follow";
+import { mapDir } from "../src/graph/repo-map";
+import { buildDirCards, rankDirCards } from "../src/graph/dirmap";
+import { rankSymbols } from "../src/rank/query";
 import path from "node:path";
 
 const GO = new URL("./fixtures/go", import.meta.url).pathname;
@@ -142,7 +142,7 @@ describe("code<->doc links", () => {
 
 describe("compiler facts overlay", () => {
   test("mergeOverlay upgrades confidence and adds exact edges", async () => {
-    const { mergeOverlay } = await import("../src/overlay");
+    const { mergeOverlay } = await import("../src/graph/overlay");
     const b = await buildGo();
     const overlay: Parameters<typeof mergeOverlay>[1] = {
       version: 1,
@@ -160,14 +160,14 @@ describe("compiler facts overlay", () => {
   });
 
   test("no overlay file leaves the graph unchanged", async () => {
-    const { loadOverlay } = await import("../src/overlay");
+    const { loadOverlay } = await import("../src/graph/overlay");
     expect(await loadOverlay(path.join(import.meta.dir, "..", "spike", "fixtures", "go"))).toBeNull();
   });
 });
 
 describe("typed artifacts", () => {
   test("env vars become first-class config symbols", async () => {
-    const { extractArtifacts } = await import("../src/artifacts");
+    const { extractArtifacts } = await import("../src/out/artifacts");
     const a = await extractArtifacts("tests/fixtures/typescript", ["src/index.ts"]);
     const port = a.find((x) => x.name === "PORT");
     expect(port).toBeDefined();

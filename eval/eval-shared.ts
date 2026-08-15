@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { build } from "../src/build";
-import { cachePathFor } from "../src/cache";
+import { build } from "../src/out/build";
+import { cachePathFor } from "../src/core/cache";
 
 /** Shared eval corpus machinery: task shape, pinned-corpus loading, and
  *  real-repo cloning. Used by eval/eval.ts (regression gate) and

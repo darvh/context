@@ -1,7 +1,7 @@
-import { build } from "../build";
-import { findRoot } from "../scan";
-import { buildDirCards } from "../dirmap";
-import { withTimeout } from "../async";
+import { build } from "../out/build";
+import { findRoot } from "../graph/scan";
+import { buildDirCards } from "../graph/dirmap";
+import { withTimeout } from "../core/async";
 import { readHookState } from "./state";
 
 /**

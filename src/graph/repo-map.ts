@@ -1,5 +1,5 @@
-import type { BuildResult } from "./build";
-import type { SymbolFact } from "./facts";
+import type { BuildResult } from "../out/build";
+import type { SymbolFact } from "../core/facts";
 
 /** Neighborhood RepoMap: a small, relationship-centered textual map over one
  *  directory, compiled from the cached graph per request. Not a second search

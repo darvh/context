@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import ignore from "ignore";
-import { mapLimit } from "./async";
+import { mapLimit } from "../core/async";
 
 const DEFAULT_IGNORES = [
   ".git",

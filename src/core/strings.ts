@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { Graph } from "./facts";
+import type { Graph } from "../core/facts";
 
 /** Runtime strings: bounded string literals from each symbol's body, attached
  *  to the symbol so the lexical lane can match error/log/config strings the

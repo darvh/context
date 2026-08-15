@@ -1,5 +1,5 @@
-import type { BuildResult } from "./build";
-import type { Edge, SymbolFact } from "./facts";
+import type { BuildResult } from "../out/build";
+import type { Edge, SymbolFact } from "../core/facts";
 
 export interface ImpactReport {
   symbol?: SymbolFact;

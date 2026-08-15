@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { Edge, Graph, SymbolFact } from "./facts";
+import type { Edge, Graph, SymbolFact } from "../core/facts";
 
 /** External facts overlay: merge compiler/LSP/SCIP-backed facts (exported as
  *  JSON) into the Tree-sitter graph. Tree-sitter remains the universal

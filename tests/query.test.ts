@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { rankSymbols, appendSemanticHits, rankFiles, fuseFileHits } from "../src/query";
-import type { RankedHit } from "../src/query";
-import { buildBm25Index } from "../src/bm25";
-import type { Graph } from "../src/facts";
-import type { DocFact } from "../src/doc";
+import { rankSymbols, appendSemanticHits, rankFiles, fuseFileHits } from "../src/rank/query";
+import type { RankedHit } from "../src/rank/query";
+import { buildBm25Index } from "../src/rank/bm25";
+import type { Graph } from "../src/core/facts";
+import type { DocFact } from "../src/core/doc";
 
 const graph: Graph = {
   symbols: [
@@ -191,7 +191,7 @@ describe("diagnostic and constraint lanes", () => {
   });
 
   test("conflicted confidence when two directories compete near the top", async () => {
-    const { queryConfidence } = await import("../src/query");
+    const { queryConfidence } = await import("../src/rank/query");
     const out = rank("store config");
     expect(["strong", "weak", "conflicted", "empty"]).toContain(queryConfidence(out));
   });
@@ -199,7 +199,7 @@ describe("diagnostic and constraint lanes", () => {
 
 describe("irregular morphology + artifacts", () => {
   test("kept expands to keep for matching", async () => {
-    const { expandIrregular } = await import("../src/rules");
+    const { expandIrregular } = await import("../src/core/rules");
     expect(expandIrregular("kept")).toEqual(["kept", "keep"]);
     expect(expandIrregular("store")).toEqual(["store"]);
   });

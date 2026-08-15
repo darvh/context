@@ -1,5 +1,5 @@
-import type { BuildResult } from "./build";
-import type { Edge, SymbolFact } from "./facts";
+import type { BuildResult } from "../out/build";
+import type { Edge, SymbolFact } from "../core/facts";
 
 /** Bounded directional graph traversal. Callers/callees/tests/inheritance by
  *  edge kind, with short trails (symbol -> ... -> target) instead of a global

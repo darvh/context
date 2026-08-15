@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { resolveFacts, type FileFacts } from "../src/resolve";
+import { resolveFacts, type FileFacts } from "../src/graph/resolve";
 
 function ff(file: string, symbols: FileFacts["symbols"]): FileFacts {
   return { file, lang: "ts", hash: "h", symbols, edges: [], imports: [] };

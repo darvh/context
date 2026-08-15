@@ -1,14 +1,14 @@
-import { build } from "../build";
-import { findRoot } from "../scan";
-import { rankSymbols, explicitFilesFromTask } from "../query";
-import { buildBm25Index } from "../bm25";
-import { assemble } from "../assemble";
-import { buildDirCards, dirOf } from "../dirmap";
-import { estTokens } from "../tokens";
-import { projectSavings, type Savings } from "../savings";
+import { build } from "../out/build";
+import { findRoot } from "../graph/scan";
+import { rankSymbols, explicitFilesFromTask } from "../rank/query";
+import { buildBm25Index } from "../rank/bm25";
+import { assemble } from "../out/assemble";
+import { buildDirCards, dirOf } from "../graph/dirmap";
+import { estTokens } from "../core/tokens";
+import { projectSavings, type Savings } from "../out/savings";
 import { readHookState, writeHookState } from "./state";
-import { loadCache } from "../cache";
-import { changedFiles } from "../diff";
+import { loadCache } from "../core/cache";
+import { changedFiles } from "../graph/diff";
 import { createHash } from "node:crypto";
 
 const HOOK_TIMEOUT_MS = Number(process.env.CONTEXT_HOOK_TIMEOUT_MS ?? 1000);

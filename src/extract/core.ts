@@ -1,11 +1,11 @@
-import type { Node } from "../parse";
+import type { Node } from "../core/parse";
 import {
   makeId,
   type Confidence,
   type EdgeKind,
   type Kind,
   type SymbolFact,
-} from "../facts";
+} from "../core/facts";
 import { DOC_CLEAN_RE, DOC_LINE_RE, ENTRY_SYMBOL_RULES, FILE_PATTERNS, ROUTE_RULES, SIG_LANG_SPECIAL, SIG_STOPS } from "./rules";
 
 export interface Ctx {
@@ -20,8 +20,8 @@ export interface Ctx {
   byName: Map<string, string[]>; // name -> symbol ids in this file
 }
 
-type Edge = import("../facts").Edge;
-type Import = import("../facts").Import;
+type Edge = import("../core/facts").Edge;
+type Import = import("../core/facts").Import;
 
 const pos = (n: Node) => ({
   sl: n.startPosition.row + 1,

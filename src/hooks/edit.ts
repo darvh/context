@@ -1,8 +1,8 @@
 import path from "node:path";
 import { basename, isAbsolute } from "node:path";
-import { build, type BuildResult } from "../build";
-import { findRoot } from "../scan";
-import { changedFiles } from "../diff";
+import { build, type BuildResult } from "../out/build";
+import { findRoot } from "../graph/scan";
+import { changedFiles } from "../graph/diff";
 import { readHookState, writeHookState } from "./state";
 
 export interface EditInput {

@@ -1,15 +1,15 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { build } from "../src/build";
-import { rankSymbols, explicitFilesFromTask } from "../src/query";
-import { buildBm25Index } from "../src/bm25";
-import { assemble, type Capsule } from "../src/assemble";
-import { capsuleToJson } from "../src/render";
-import { estTokens } from "../src/tokens";
-import { mapDir } from "../src/repo-map";
-import { follow } from "../src/follow";
-import { buildDirCards, rankDirCards } from "../src/dirmap";
-import type { RankedHit } from "../src/query";
+import { build } from "../src/out/build";
+import { rankSymbols, explicitFilesFromTask } from "../src/rank/query";
+import { buildBm25Index } from "../src/rank/bm25";
+import { assemble, type Capsule } from "../src/out/assemble";
+import { capsuleToJson } from "../src/out/render";
+import { estTokens } from "../src/core/tokens";
+import { mapDir } from "../src/graph/repo-map";
+import { follow } from "../src/out/follow";
+import { buildDirCards, rankDirCards } from "../src/graph/dirmap";
+import type { RankedHit } from "../src/rank/query";
 
 /**
  * Observation idea checker: one pinned corpus, one budget, four observation

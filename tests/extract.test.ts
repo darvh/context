@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { build } from "../src/build";
-import type { BuildResult } from "../src/build";
+import { build } from "../src/out/build";
+import type { BuildResult } from "../src/out/build";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 

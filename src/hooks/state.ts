@@ -1,5 +1,5 @@
-import type { Savings } from "../savings";
-import { hookStatePath, readJson, writeJson } from "../cache";
+import type { Savings } from "../out/savings";
+import { hookStatePath, readJson, writeJson } from "../core/cache";
 
 /** Graph-size snapshot written by the user hook after each build. */
 interface StatusInfo {

@@ -1,17 +1,17 @@
 import path from "node:path";
-import { build } from "../build";
-import { rankSymbols, explicitFilesFromTask, queryConfidence, fuseFileHits } from "../query";
-import { assemble, type Capsule } from "../assemble";
-import { renderCapsule, capsuleToJson } from "../render";
-import { resolveExpand, renderExpanded } from "../expand";
-import { impact, renderImpact, type ImpactReport } from "../impact";
-import { changedFiles, coChangedFiles } from "../diff";
-import { lastCapsulePath, writeJson, repoKey, readJson, sessionStatePath } from "../cache";
-import { buildBm25Index } from "../bm25";
-import { appendSemanticHits } from "../query";
-import { estTokens } from "../tokens";
+import { build } from "../out/build";
+import { rankSymbols, explicitFilesFromTask, queryConfidence, fuseFileHits } from "../rank/query";
+import { assemble, type Capsule } from "../out/assemble";
+import { renderCapsule, capsuleToJson } from "../out/render";
+import { resolveExpand, renderExpanded } from "../out/expand";
+import { impact, renderImpact, type ImpactReport } from "../out/impact";
+import { changedFiles, coChangedFiles } from "../graph/diff";
+import { lastCapsulePath, writeJson, repoKey, readJson, sessionStatePath } from "../core/cache";
+import { buildBm25Index } from "../rank/bm25";
+import { appendSemanticHits } from "../rank/query";
+import { estTokens } from "../core/tokens";
 import { buildInfo } from "./version";
-import type { ScanOpts } from "../scan";
+import type { ScanOpts } from "../graph/scan";
 
 const HELP = `context — deterministic discovery compiler
 
@@ -105,7 +105,7 @@ async function cmdPrepare(args: Args) {
   let semStats: { model: string; hits: number; dirs: number; ms: number } | undefined;
   const conf = queryConfidence(hits);
   if (conf === "weak" || conf === "empty") {
-    const sem = await import("../semantic");
+    const sem = await import("../rank/semantic");
     if (await sem.semanticEnabled()) {
       const t1 = performance.now();
       // the semantic lane runs in the compiled runtime too: the onnxruntime
@@ -155,7 +155,7 @@ async function cmdExpand(args: Args) {
     process.exit(1);
   }
   // capsule + file:line handles are repo-relative: resolve against the walked root
-  const root = (await (await import("../scan")).findRoot(args.root)) ?? args.root;
+  const root = (await (await import("../graph/scan")).findRoot(args.root)) ?? args.root;
   const e = await resolveExpand(root, handle);
   if (!e) {
     console.error("context: no such handle (run `context prepare` first, or pass file:line)");
@@ -192,7 +192,7 @@ async function cmdMap(args: Args) {
   }
   const b = await build(args.root, args.scan);
   const dirArg = arg.endsWith("/") ? arg.slice(0, -1) : arg;
-  const { mapDir } = await import("../repo-map");
+  const { mapDir } = await import("../graph/repo-map");
   const { blocks, truncated } = mapDir(b, dirArg);
   const out: string[] = [];
   if (!blocks.length) {
@@ -217,7 +217,7 @@ async function cmdFollow(args: Args) {
     process.exit(1);
   }
   const b = await build(args.root, args.scan);
-  const { follow, renderFollow, connectSeeds, renderConnections, EDGE_KINDS, resolveSymbol } = await import("../follow");
+  const { follow, renderFollow, connectSeeds, renderConnections, EDGE_KINDS, resolveSymbol } = await import("../out/follow");
   // two symbols: render the minimal connecting subgraph instead of trails
   const second = args.rest[1];
   if (second && !(EDGE_KINDS as readonly string[]).includes(second)) {
@@ -270,7 +270,7 @@ async function cmdInit(args: Args, rest: string[]) {
     console.error(`context: unknown --targets: ${unknown.join(", ")} (known: ${AGENT_NAMES.join(", ")})`);
     process.exit(1);
   }
-  const repo = project ? (await (await import("../scan")).findRoot(args.root)) ?? args.root : "";
+  const repo = project ? (await (await import("../graph/scan")).findRoot(args.root)) ?? args.root : "";
   console.log(`context init (targets: ${targets}, ${project ? "project" : "user"} scope${hooks ? ", hooks" : ", no hooks (--no-hooks)"}${noInstructions ? ", no instructions (--no-instructions)" : ""})`);
   for (const r of await init({ project, repo, force, dryRun, only, hooks, instructions: !noInstructions, create })) {
     const note = r.note ? ` ${r.note}` : "";

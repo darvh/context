@@ -1,5 +1,5 @@
-import type { Graph } from "./facts";
-import type { DocFact } from "./doc";
+import type { Graph } from "../core/facts";
+import type { DocFact } from "../core/doc";
 
 /** Code↔document evidence links: high-confidence, deterministic edges from a
  *  document section to the code it mentions. Only exact token/path matches

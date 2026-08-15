@@ -1,18 +1,18 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { mapLimit, withTimeout } from "./async";
-import { CACHE_VERSION, cachePathFor, loadCache, repoKey, writeCache } from "./cache";
-import { extractDoc, isDocFile, MAX_DOC_BYTES, sha256Hex, type DocFact } from "./doc";
+import { mapLimit, withTimeout } from "../core/async";
+import { CACHE_VERSION, cachePathFor, loadCache, repoKey, writeCache } from "../core/cache";
+import { extractDoc, isDocFile, MAX_DOC_BYTES, sha256Hex, type DocFact } from "../core/doc";
 import { extractFile } from "./extract";
-import type { FileFacts, Graph } from "./facts";
-import { langFor, rgLangFor } from "./lang";
-import { buildDocLinks, type DocLink } from "./links";
-import { loadOverlay, mergeOverlay } from "./overlay";
-import { loadScipIndex } from "./scip";
-import { extractArtifacts } from "./artifacts";
-import { attachRuntimeStrings } from "./strings";
-import { resolveFacts } from "./resolve";
-import { scan, type ScanOpts } from "./scan";
+import type { FileFacts, Graph } from "../core/facts";
+import { langFor, rgLangFor } from "../core/lang";
+import { buildDocLinks, type DocLink } from "../graph/links";
+import { loadOverlay, mergeOverlay } from "../graph/overlay";
+import { loadScipIndex } from "../graph/scip";
+import { extractArtifacts } from "../out/artifacts";
+import { attachRuntimeStrings } from "../core/strings";
+import { resolveFacts } from "../graph/resolve";
+import { scan, type ScanOpts } from "../graph/scan";
 
 export interface BuildResult {
   root: string; // walked tree (scope)

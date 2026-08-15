@@ -1,5 +1,5 @@
 import pkg from "../../package.json" with { type: "json" };
-import { CACHE_VERSION } from "../cache";
+import { CACHE_VERSION } from "../core/cache";
 
 /** Bun-compiled binaries run from the embedded $bunfs filesystem; the source
  * runtime runs from a real checkout. */

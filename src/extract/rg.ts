@@ -1,4 +1,4 @@
-import type { Node } from "../parse";
+import type { Node } from "../core/parse";
 import type { Ctx } from "./core";
 import { addSym, classifyFile, promoteKinds } from "./core";
 import { RG_DECL, RG_IMPORT_RES, rgKindFromLine } from "./rules";

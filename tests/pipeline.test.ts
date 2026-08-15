@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { build } from "../src/build";
-import { rankSymbols } from "../src/query";
-import { buildBm25Index } from "../src/bm25";
-import { assemble } from "../src/assemble";
-import { expandFromCapsule, renderExpanded, resolveExpand, expandDocSection } from "../src/expand";
-import { impact, renderImpact } from "../src/impact";
-import { loadCache } from "../src/cache";
+import { build } from "../src/out/build";
+import { rankSymbols } from "../src/rank/query";
+import { buildBm25Index } from "../src/rank/bm25";
+import { assemble } from "../src/out/assemble";
+import { expandFromCapsule, renderExpanded, resolveExpand, expandDocSection } from "../src/out/expand";
+import { impact, renderImpact } from "../src/out/impact";
+import { loadCache } from "../src/core/cache";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 

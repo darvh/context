@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { withTimeout } from "./async";
-import { atomicWrite, cacheDir } from "./cache";
-import type { DocFact } from "./doc";
-import { dirOf } from "./dirmap";
-import type { Graph, Span } from "./facts";
-import { meaningfulTerms } from "./query";
+import { withTimeout } from "../core/async";
+import { atomicWrite, cacheDir } from "../core/cache";
+import type { DocFact } from "../core/doc";
+import { dirOf } from "../graph/dirmap";
+import type { Graph, Span } from "../core/facts";
+import { meaningfulTerms } from "../rank/query";
 
 /**
  * Optional local semantic fallback (plan Phase 5). Explicitly opt-in via

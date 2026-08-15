@@ -3,7 +3,7 @@ import { create, toBinary } from "@bufbuild/protobuf";
 import { IndexSchema } from "@c4312/scip";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { loadScipIndex, nameFromMoniker } from "../src/scip";
+import { loadScipIndex, nameFromMoniker } from "../src/graph/scip";
 
 describe("scip index ingest", () => {
   test("moniker names extract from language-specific descriptors", () => {

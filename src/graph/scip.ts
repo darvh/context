@@ -2,7 +2,7 @@ import { fromBinary } from "@bufbuild/protobuf";
 import { IndexSchema } from "@c4312/scip";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { OverlayFacts } from "./overlay";
+import type { OverlayFacts } from "../graph/overlay";
 
 /** Compiler-backed SCIP index ingest: reads `index.scip` (binary protobuf) at
  *  the walked root and converts it to the documented OverlayFacts schema,

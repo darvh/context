@@ -1,4 +1,4 @@
-import type { Node } from "../parse";
+import type { Node } from "../core/parse";
 import type { Ctx } from "./core";
 import { addSym, childField, refEdge, walk, classifyFile, promoteKinds, addCallEdges } from "./core";
 import { TEST_IDENTS } from "./rules";

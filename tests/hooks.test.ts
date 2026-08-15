@@ -7,11 +7,11 @@ import { runEditHook, blastRadius, editedFilePath } from "../src/hooks/edit";
 import { sessionOrientation } from "../src/hooks/session";
 import { renderStatusline } from "../src/hooks/statusline";
 import { readHookState } from "../src/hooks/state";
-import { writeJson, readJson, lastCapsulePath, repoKey, cachePathFor, writeCache, loadCache, CACHE_VERSION, hookStatePath } from "../src/cache";
-import type { CacheRecord } from "../src/cache";
-import { projectSavings } from "../src/savings";
-import type { Capsule } from "../src/assemble";
-import type { BuildResult } from "../src/build";
+import { writeJson, readJson, lastCapsulePath, repoKey, cachePathFor, writeCache, loadCache, CACHE_VERSION, hookStatePath } from "../src/core/cache";
+import type { CacheRecord } from "../src/core/cache";
+import { projectSavings } from "../src/out/savings";
+import type { Capsule } from "../src/out/assemble";
+import type { BuildResult } from "../src/out/build";
 
 const GO = new URL("./fixtures/go", import.meta.url).pathname;
 const TS = new URL("./fixtures/typescript", import.meta.url).pathname;
@@ -71,7 +71,7 @@ describe("user hook", () => {
   });
 
   test("session token-savings total accumulates per session id", async () => {
-    const root = (await (await import("../src/scan")).findRoot(GO)) ?? GO;
+    const root = (await (await import("../src/graph/scan")).findRoot(GO)) ?? GO;
     // hook state persists across test runs: start from a clean slate
     await fs.rm(hookStatePath(root), { force: true });
 
@@ -104,7 +104,7 @@ describe("post-edit hook (blast radius)", () => {
   });
 
   test("blastRadius lists cross-file dependents, capped", async () => {
-    const { build } = await import("../src/build");
+    const { build } = await import("../src/out/build");
     const b: BuildResult = await build(GO);
     const br = blastRadius(b, "internal/session/store.go");
     expect(br).toContain("dependents of store.go");
@@ -210,17 +210,17 @@ describe("cache helpers", () => {
 
 describe("savings", () => {
   test("projectSavings baselines the whole pointed-at files", async () => {
-    const { build } = await import("../src/build");
+    const { build } = await import("../src/out/build");
     const b: BuildResult = await build(GO);
-    const bm25 = b.graph.symbols.length ? (await import("../src/bm25")).buildBm25Index(b.graph) : undefined;
-    const hits = (await import("../src/query")).rankSymbols({
+    const bm25 = b.graph.symbols.length ? (await import("../src/rank/bm25")).buildBm25Index(b.graph) : undefined;
+    const hits = (await import("../src/rank/query")).rankSymbols({
       task: "session persistence",
       graph: b.graph,
       changed: new Set(),
       explicitFiles: [],
       bm25,
     });
-    const capsule: Capsule = (await import("../src/assemble")).assemble({
+    const capsule: Capsule = (await import("../src/out/assemble")).assemble({
       task: "session persistence",
       build: b,
       hits,

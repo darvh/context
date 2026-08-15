@@ -1,8 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { BuildResult } from "./build";
-import type { Capsule } from "./assemble";
-import { estTokens } from "./tokens";
+import type { BuildResult } from "../out/build";
+import type { Capsule } from "../out/assemble";
+import { estTokens } from "../core/tokens";
 
 export interface Savings {
   coldTokens: number; // est. input tokens the agent would read/discover without the capsule

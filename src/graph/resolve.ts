@@ -1,7 +1,7 @@
 import path from "node:path";
-import type { Edge, FileFacts, Graph, Import, SymbolFact } from "./facts";
+import type { Edge, FileFacts, Graph, Import, SymbolFact } from "../core/facts";
 
-export type { FileFacts } from "./facts";
+export type { FileFacts } from "../core/facts";
 
 /** Resolve heuristic refs/edges to real symbol ids across files. Deterministic. */
 export function resolveFacts(files: FileFacts[]): Graph {

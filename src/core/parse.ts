@@ -1,6 +1,6 @@
 import path from "node:path";
 import { Parser, Language } from "web-tree-sitter";
-import { LANGS, grammarDir, type LangConf } from "./lang";
+import { LANGS, grammarDir, type LangConf } from "../core/lang";
 
 // web-tree-sitter types namedChildren as (Node|null)[] and every accessor as
 // nullable, but the extractors treat the tree as fully materialized. Cast once

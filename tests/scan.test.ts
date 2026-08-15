@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { scan } from "../src/scan";
+import { scan } from "../src/graph/scan";
 
 const tmp = () => path.join(import.meta.dir, "..", "var", "scan-" + Date.now() + "-" + Math.random().toString(36).slice(2));
 

@@ -1,13 +1,13 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { rankSymbols, appendSemanticHits, explicitFilesFromTask, queryConfidence, rankFiles, fuseFileHits } from "../src/query";
-import { buildBm25Index } from "../src/bm25";
-import { repoKey } from "../src/cache";
-import { semanticEnabled, semanticSearch } from "../src/semantic";
-import { assemble } from "../src/assemble";
-import { capsuleToJson } from "../src/render";
-import { estTokens } from "../src/tokens";
-import type { RankedHit } from "../src/query";
+import { rankSymbols, appendSemanticHits, explicitFilesFromTask, queryConfidence, rankFiles, fuseFileHits } from "../src/rank/query";
+import { buildBm25Index } from "../src/rank/bm25";
+import { repoKey } from "../src/core/cache";
+import { semanticEnabled, semanticSearch } from "../src/rank/semantic";
+import { assemble } from "../src/out/assemble";
+import { capsuleToJson } from "../src/out/render";
+import { estTokens } from "../src/core/tokens";
+import type { RankedHit } from "../src/rank/query";
 
 /**
  * Retrieval evaluation.

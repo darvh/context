@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { findRoot } from "../scan";
+import { findRoot } from "../graph/scan";
 import { readHookState, type HookState } from "./state";
 
 const C = {

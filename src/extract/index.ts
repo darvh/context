@@ -1,4 +1,4 @@
-import type { Node } from "../parse";
+import type { Node } from "../core/parse";
 import type { Extractor } from "./core";
 import { newCtx } from "./core";
 import { extractGo } from "./go";
@@ -6,9 +6,9 @@ import { extractTsJs } from "./ts";
 import { extractPy } from "./py";
 import { extractGeneric } from "./generic";
 import { extractRg } from "./rg";
-import type { FileFacts } from "../facts";
-import { parse } from "../parse";
-import { rgLangFor } from "../lang";
+import type { FileFacts } from "../core/facts";
+import { parse } from "../core/parse";
+import { rgLangFor } from "../core/lang";
 
 const EXTRACTOR_MAP: Record<string, Extractor> = {
   go: extractGo,

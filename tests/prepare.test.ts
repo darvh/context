@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { build } from "../src/build";
-import { rankSymbols, explicitFilesFromTask } from "../src/query";
-import { buildBm25Index } from "../src/bm25";
-import { assemble } from "../src/assemble";
-import { renderCapsule, capsuleToJson } from "../src/render";
+import { build } from "../src/out/build";
+import { rankSymbols, explicitFilesFromTask } from "../src/rank/query";
+import { buildBm25Index } from "../src/rank/bm25";
+import { assemble } from "../src/out/assemble";
+import { renderCapsule, capsuleToJson } from "../src/out/render";
 
 const GO = new URL("./fixtures/go", import.meta.url).pathname;
 const TS = new URL("./fixtures/typescript", import.meta.url).pathname;

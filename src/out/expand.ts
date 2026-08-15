@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { Capsule } from "./assemble";
-import { lastCapsulePath, readJson } from "./cache";
+import type { Capsule } from "../out/assemble";
+import { lastCapsulePath, readJson } from "../core/cache";
 
 const CONTEXT_LINES = 2;
 const MAX_LINES = 200;
@@ -28,7 +28,7 @@ export async function expandFromCapsule(capsule: Capsule | null, handle: string)
  *  raw file read when the extracted record is unavailable. */
 export async function expandDocSection(root: string, file: string, line: number): Promise<Expanded | null> {
   try {
-    const { build } = await import("./build");
+    const { build } = await import("./out/build");
     const b = await build(root);
     const d = b.docs.find((x) => x.file === file);
     const sec = d?.sections.find((s) => line >= s.line && line <= s.endLine) ?? d?.sections.find((s) => s.line === line);

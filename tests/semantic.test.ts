@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { semanticEnabled, SEMANTIC_VERSION } from "../src/semantic";
+import { semanticEnabled, SEMANTIC_VERSION } from "../src/rank/semantic";
 
 describe("semantic fallback", () => {
   test("explicit opt-in via CONTEXT_SEMANTIC; off by default", async () => {

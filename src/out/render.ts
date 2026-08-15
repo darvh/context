@@ -1,6 +1,6 @@
-import type { Capsule } from "./assemble";
-import { renderDirCard } from "./dirmap";
-import { estTokens } from "./tokens";
+import type { Capsule } from "../out/assemble";
+import { renderDirCard } from "../graph/dirmap";
+import { estTokens } from "../core/tokens";
 
 /** Compact human rendering. Deterministic. */
 export function renderCapsule(c: Capsule): string {

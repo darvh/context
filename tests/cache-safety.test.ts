@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { build } from "../src/build";
-import { writeJson, readJson, hookStatePath, lastCapsulePath, repoKey, cachePathFor } from "../src/cache";
+import { build } from "../src/out/build";
+import { writeJson, readJson, hookStatePath, lastCapsulePath, repoKey, cachePathFor } from "../src/core/cache";
 import { runHook } from "../src/hooks/user";
 
 const GO = new URL("./fixtures/go", import.meta.url).pathname;

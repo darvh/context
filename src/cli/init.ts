@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
+import { execFile } from "node:child_process";
 
 // Agent compatibility matrix — mirrors proof's rule table. Directories follow
 // each agent's documented skill convention; copilot and antigravity use the
@@ -145,6 +146,7 @@ function validateOnly(only: string[]): void {
 /** Install the host-neutral context skill into each selected agent dir. */
 export async function init(opts: InitOptions): Promise<InitResult[]> {
   const out: InitResult[] = [];
+  presence.clear(); // probes are per-run: a PATH change between inits must be seen
   const src = path.join(await skillDir(), "SKILL.md");
   validateOnly(opts.only);
   const agents = opts.only.length ? TARGETS.filter((t) => opts.only.includes(t.name)) : TARGETS;
@@ -486,13 +488,29 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
-/** Presence probe for installer mode (--create): a known home config dir or
- *  a PATH binary. Never counts the shared ~/.agents skills home — that dir is
- *  created by this installer, not by the agent. */
+/** Presence probe, cached per init run: a PATH binary that answers
+ *  `--version` proves a real agent CLI (a name collision like some unrelated
+ *  `pi` won't pass). GUI-only installs have no CLI, so the config-dir probe
+ *  stays as the fallback; the shared ~/.agents skills home never counts — it
+ *  is created by this installer, not by the agent. */
+const presence = new Map<string, boolean>();
 async function agentPresent(t: (typeof TARGETS)[number]): Promise<boolean> {
-  if (t.bin && (await Bun.which(t.bin))) return true;
-  for (const d of t.probe ?? []) {
-    if (await exists(path.join(homedir(), d))) return true;
+  const hit = presence.get(t.name);
+  if (hit !== undefined) return hit;
+  let present = false;
+  const p = t.bin ? await Bun.which(t.bin) : null;
+  if (p) {
+    const v = await execFile(p, ["--version"], { timeout: 2000 });
+    present = v === null || v.killed === false;
   }
-  return false;
+  if (!present) {
+    for (const d of t.probe ?? []) {
+      if (await exists(path.join(homedir(), d))) {
+        present = true;
+        break;
+      }
+    }
+  }
+  presence.set(t.name, present);
+  return present;
 }
