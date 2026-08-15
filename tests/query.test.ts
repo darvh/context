@@ -24,7 +24,7 @@ const graph: Graph = {
   imports: [],
 };
 
-const doc: DocFact = { file: "docs/mod.md", text: "moda module docs", sections: [{ text: "moda module docs", line: 1 }], hash: "h", size: 10, mtimeMs: 0 };
+const doc: DocFact = { file: "docs/mod.md", text: "moda module docs", sections: [{ text: "moda module docs", line: 1, endLine: 1 }], hash: "h", size: 10, mtimeMs: 0 };
 
 describe("rankSymbols hybrid fusion", () => {
   test("out-of-range doc rowid skips the doc hit without aborting fusion", () => {
@@ -101,9 +101,9 @@ describe("long-doc section indexing", () => {  const longDoc: DocFact = {
     file: "docs/guide.md",
     text: "first section only\nsecond section only\nthird section only",
     sections: [
-      { text: "first section only", line: 1 },
-      { text: "second section only", line: 3 },
-      { text: "third section only", line: 5 },
+      { text: "first section only", line: 1, endLine: 1 },
+      { text: "second section only", line: 3, endLine: 3 },
+      { text: "third section only", line: 5, endLine: 5 },
     ],
     hash: "h",
     size: 10,

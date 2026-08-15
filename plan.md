@@ -122,11 +122,22 @@ these correctness and compression problems are fixed.
   pipeline (1058 → 1180). The bm25 lane also stopped re-admitting import
   symbols as hits (they were never supposed to be targets; the truthful budget
   exposed it).
-- Not yet done: Vector 7 doc section structure is mostly present (sections
-  with lines); exact heading-path retrieval for converted office docs still
-  needs the section-ordinal/char-range depth. Release-gate item 9 (paired
-  agent tasks) is the next external step.
-
+- Vectors 1–8 done (all implementation vectors). Vector 7 completed to the
+  section level: every `DocSection` carries a start and end line, so a doc hit
+  has a real line range (`range: "sl-el"`) and `context expand` lands on the
+  whole section that matched, with the section ordinal and heading in the hit
+  sig. Cache schema bumped to `context-cache-v7` for the new section shape.
+- Release-gate checks on this host: (1) observe output within budget —
+  verified, 0/19 eval violations; (2) dirty files do not displace
+  neighborhoods — verified, dirty-tree tasks 100%; (3) reproducible on pinned
+  real tasks — `bun run eval -- real` green: all path/symbol/change tasks
+  100%, no regression on any of the 31 tasks, and the hybrid lane recovers
+  `real-flask-doc-config` (docs/config.rst) that baseline misses; (6) latency
+  within budgets — self-repo cold 409 ms / warm 46 ms (spike budgets: cold
+  <2 s, warm query <150 ms). Remaining pre-existing, explained concept-task
+  misses on real repos (express json sym, flask cookies/routes) are unchanged
+  across variants. (9) Paired agent tasks still need a real-host harness —
+  the only external step left.
 ## Observation contract
 
 `observe(task, budget)` should produce a bounded capsule containing:
@@ -394,8 +405,9 @@ note, not as a second benchmark system.
 6. ✅ Make code and document expansion span/section-backed.
 7. ✅ Replace the current bench with the variant idea checker.
 8. ✅ Extend `eval` as the deterministic regression gate.
-9. Run paired agent tasks and publish only improvements that survive both
-   deterministic and agent-level checks.
+9. ⏳ Run paired agent tasks and publish only improvements that survive both
+   deterministic and agent-level checks. (External: needs a real-host agent
+   harness; deterministic gates for everything else are green.)
 
 ## Release gate
 

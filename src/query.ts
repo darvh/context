@@ -62,15 +62,17 @@ export interface QueryInput {
 }
 
 /** Transient symbol for a doc file (or one of its sections) — never stored in
- *  the graph, only for capsule rendering. The line points at the section that
+ *  the graph, only for capsule rendering. The span covers the section that
  *  matched so `context expand` lands on the answer region; the sig records the
  *  section ordinal and heading when the section is heading-led. */
 export function docSymbol(d: DocFact, line = 1): SymbolFact {
   const name = d.file.split("/").pop() ?? d.file;
   const idx = d.sections.findIndex((s) => s.line === line);
   let sig = "";
+  let endLine = line;
   if (idx >= 0) {
     const sec = d.sections[idx];
+    endLine = sec.endLine || line;
     const heading = sec.text.split("\n").find((l) => l.startsWith("#"));
     sig = `section ${idx + 1}${heading ? ` · ${heading.trim().replace(/^#+\s*/, "")}` : ""}`;
   }
@@ -80,7 +82,7 @@ export function docSymbol(d: DocFact, line = 1): SymbolFact {
     kind: "doc",
     name,
     sig,
-    span: { sl: line, sc: 1, el: line, ec: 1 },
+    span: { sl: line, sc: 1, el: endLine, ec: 1 },
     nameLine: line,
     exported: false,
     test: false,

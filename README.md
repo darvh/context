@@ -113,10 +113,10 @@ entry-point signals (authoritative) with two fallback lanes:
   `@firecrawl/anydoc` — a local Rust core, no LLM, no network) are indexed by
   their extracted text. Long documents are split into bounded sections
   (headings / paragraph runs, ≤4KB each, ≤40 per doc) that carry their source
-  start line, so a 25KB file cannot bury its answer and `context expand`
-  lands on the section that matched. They never enter the symbol graph; a
-  matching doc carries a real BM25 score so a documentation query surfaces
-  its document.
+  start and end line, so a 25KB file cannot bury its answer and `context
+  expand` lands on the section that matched (a doc hit's range covers the
+  whole section). They never enter the symbol graph; a matching doc carries a
+  real BM25 score so a documentation query surfaces its document.
 - Each hit's `reason` lists the signals that matched.
 
 ### Evaluation

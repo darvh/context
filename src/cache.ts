@@ -7,7 +7,7 @@ import type { DocFact } from "./doc";
 
 // Bump CACHE_VERSION whenever extraction/ranking schema semantics change so
 // stale cached facts are ignored and rebuilt.
-export const CACHE_VERSION = "context-cache-v6";
+export const CACHE_VERSION = "context-cache-v7";
 
 export interface CacheRecord {
   version: string;

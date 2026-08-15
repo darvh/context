@@ -24,6 +24,8 @@ export interface DocSection {
   text: string;
   /** 1-based start line in the source file; 1 when the format has no lines (anydoc) */
   line: number;
+  /** 1-based end line (inclusive) — the section's full range for pinpoint */
+  endLine: number;
 }
 
 export interface DocFact {
@@ -95,34 +97,34 @@ function cleanText(raw: string): string {
 }
 
 /**
- * Split cleaned text into bounded sections, tracking each section's start
- * line. Headings and paragraph runs become separate units; the whole document
- * is never one row.
+ * Split cleaned text into bounded sections, tracking each section's start and
+ * end line. Headings and paragraph runs become separate units; the whole
+ * document is never one row.
  */
 export function splitSections(text: string): DocSection[] {
   const lines = text.split("\n");
   const out: DocSection[] = [];
   let cur = "";
   let curLine = 1;
-  const flush = () => {
-    if (cur.trim().length >= 20) out.push({ text: cur.trim(), line: curLine });
+  const flush = (endLine: number) => {
+    if (cur.trim().length >= 20) out.push({ text: cur.trim(), line: curLine, endLine });
     cur = "";
   };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (/^#{1,6}\s/.test(line)) {
-      if (cur.trim().length >= 20) flush();
+      if (cur.trim().length >= 20) flush(i);
       if (cur === "") curLine = i + 1;
       cur = line + "\n";
     } else if (/^\s*$/.test(line) && cur.trim().length >= 60) {
-      flush();
+      flush(i);
     } else {
       if (cur === "") curLine = i + 1;
       cur += line + "\n";
     }
-    if (cur.length >= MAX_SECTION_CHARS) flush();
+    if (cur.length >= MAX_SECTION_CHARS) flush(i);
   }
-  flush();
+  flush(lines.length);
   return out.slice(0, MAX_SECTIONS).map((s) => ({ ...s, text: s.text.slice(0, MAX_SECTION_CHARS) }));
 }
 
