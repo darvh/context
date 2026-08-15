@@ -39,16 +39,19 @@ describe("context init", () => {
     await fs.rm(repo, { recursive: true, force: true });
   });
 
-  test("hooks: claude-code settings.json gets the adapters", async () => {
+  test("hooks: claude-code settings.json gets the adapters, idempotently", async () => {
     const repo = path.join(import.meta.dir, "..", "var", "init-hooks-" + Date.now());
     await fs.mkdir(repo, { recursive: true });
     const r = await init({ project: true, repo, force: false, dryRun: false, only: ["claude-code"], hooks: true });
     const cfg = r.find((x) => x.what === "hooks-config");
-    expect(cfg?.status).toBe("updated");
+    expect(cfg?.status).toBe("created");
     expect(cfg?.dir).toContain(".claude/settings.json");
     const settings = JSON.parse(await fs.readFile(cfg!.dir, "utf8"));
-    expect(settings.hooks.UserPromptSubmit).toContain("hook-user.ts");
-    expect(settings.hooks.Stop).toContain("hook-agent.ts");
+    expect(settings.hooks.UserPromptSubmit[0].hooks[0].command).toContain("hook-user");
+    expect(settings.hooks.Stop[0].hooks[0].command).toContain("hook-agent");
+    // foreign hooks preserved + re-init reports unchanged (graft-style merge)
+    const rerun = await init({ project: true, repo, force: false, dryRun: false, only: ["claude-code"], hooks: true });
+    expect(rerun.find((x) => x.what === "hooks-config")?.status).toBe("unchanged");
     await fs.rm(repo, { recursive: true, force: true });
   });
 

@@ -15,7 +15,7 @@ const TARGETS = [
   { name: "pi", home: "~/.agents/skills", project: ".agents/skills" },
 ];
 
-type Status = "installed" | "up-to-date" | "updated" | "conflict" | "agent-miss" | "unselected" | "error";
+type Status = "installed" | "up-to-date" | "updated" | "conflict" | "agent-miss" | "unselected" | "error" | "unchanged" | "skipped-unparseable" | "created";
 
 export const AGENT_NAMES = TARGETS.map((t) => t.name);
 
@@ -172,26 +172,59 @@ export async function init(opts: InitOptions): Promise<InitResult[]> {
 
 // --no-hooks is the opt-out; hooks install by default for hosts that support
 // them (never silently — each host gets an explicit config entry).
-/** Shared hooks-config prologue: resolve dir, agent-miss when absent
- *  (manual init never creates silently), mkdir, load, conflict-check.
- *  Returns null when the caller must skip writing. */
-async function loadHooksConfig(agent: string, opts: InitOptions, configPath: string, out: InitResult[]): Promise<any | null> {
+//
+// Hook wiring follows the graft pattern: per-event idempotent merge. Foreign
+// hook entries in an event are preserved, our own entries are replaced (so
+// re-init re-points instead of stacking), nothing is written when the file is
+// byte-identical, and unparseable host configs are skipped — never clobbered.
+const OUR_MARKERS = ["hook-user", "hook-agent", "hook-session"];
+function isOurs(entry: unknown): boolean {
+  return OUR_MARKERS.some((m) => JSON.stringify(entry).includes(m));
+}
+
+/** Merge one hook group into an event list: foreign entries first, ours last. */
+function mergeHookEvent(existing: unknown, group: unknown): unknown[] {
+  const prior = Array.isArray(existing) ? existing : [];
+  return [...prior.filter((e) => !isOurs(e)), group];
+}
+
+/** One command hook group (matcher only where the host honors it). */
+function hookGroup(command: string, timeout: number, matcher?: string): object {
+  const handler = { type: "command", command, timeout };
+  return matcher ? { matcher, hooks: [handler] } : { hooks: [handler] };
+}
+
+/** Apply desired hook groups to a config with the idempotent merge. */
+function applyHookGroups(cfg: any, groups: { event: string; command: string; timeout: number; matcher?: string }[]): void {
+  const hooks = cfg.hooks ?? {};
+  for (const g of groups) hooks[g.event] = mergeHookEvent(hooks[g.event], hookGroup(g.command, g.timeout, g.matcher));
+  cfg.hooks = hooks;
+}
+
+/** Load a hooks config file: null when the dir is absent (manual init never
+ *  creates silently) or the file is unparseable (never clobber a broken
+ *  config). */
+async function loadHookFile(agent: string, opts: InitOptions, configPath: string, out: InitResult[]): Promise<{ cfg: any; existed: boolean } | null> {
   const dir = path.dirname(configPath);
   if (!opts.project && !opts.create && !(await exists(dir))) {
     out.push({ agent, what: "hooks-config", dir, status: "agent-miss" });
     return null;
   }
   await fs.mkdir(dir, { recursive: true });
-  let cfg: any = {};
+  let cfg: any = null;
+  let existed = false;
   try {
     cfg = JSON.parse(await fs.readFile(configPath, "utf8"));
+    existed = true;
   } catch {}
-  const hooks = cfg.hooks ?? {};
-  if (hooks.SessionStart || hooks.UserPromptSubmit || hooks.Stop) {
-    out.push({ agent, what: "hooks-config", dir: configPath, status: "conflict", note: "existing hooks; use --force to overwrite" });
-    if (!opts.force || opts.dryRun) return null;
+  if (cfg === null || typeof cfg !== "object" || Array.isArray(cfg)) {
+    if (existed) {
+      out.push({ agent, what: "hooks-config", dir: configPath, status: "skipped-unparseable", note: "existing config is not a JSON object; left untouched" });
+      return null;
+    }
+    cfg = {};
   }
-  return cfg;
+  return { cfg, existed };
 }
 
 async function installHooks(opts: InitOptions): Promise<InitResult[]> {
@@ -204,19 +237,23 @@ async function installHooks(opts: InitOptions): Promise<InitResult[]> {
       const settingsPath = opts.project
         ? path.join(opts.repo, ".claude", "settings.json")
         : path.join(homedir(), ".claude", "settings.json");
-      const cfg = await loadHooksConfig(t.name, opts, settingsPath, out);
-      if (!cfg) continue;
-      const hooks = cfg.hooks ?? {};
-      if (opts.dryRun) {
-        out.push({ agent: t.name, what: "hooks-config", dir: settingsPath, status: "updated", note: "dry-run" });
-        continue;
+      const loaded = await loadHookFile(t.name, opts, settingsPath, out);
+      if (!loaded) continue;
+      const { cfg, existed } = loaded;
+      // array form so each event carries a timeout (string form cannot)
+      applyHookGroups(cfg, [
+        { event: "SessionStart", command: sessionHook, timeout: 8 },
+        { event: "UserPromptSubmit", command: userHook, timeout: 15 },
+        { event: "Stop", command: agentHook, timeout: 8 },
+      ]);
+      // headless/subagent runs deny Bash by default; an allowlist entry lets
+      // the skill's `context` calls run without a permission prompt
+      const allow = Array.isArray(cfg.permissions?.allow) ? [...cfg.permissions.allow] : [];
+      for (const entry of ["Bash(context:*)", "Bash(context:*) --json*"]) {
+        if (!allow.includes(entry)) allow.push(entry);
       }
-      hooks.SessionStart = sessionHook;
-      hooks.UserPromptSubmit = userHook;
-      hooks.Stop = agentHook;
-      cfg.hooks = hooks;
-      await fs.writeFile(settingsPath, JSON.stringify(cfg, null, 2) + "\n");
-      out.push({ agent: t.name, what: "hooks-config", dir: settingsPath, status: "updated" });
+      cfg.permissions = { ...(cfg.permissions ?? {}), allow };
+      await writeJsonIfChanged(t.name, settingsPath, cfg, existed, out, opts.dryRun);
       out.push({ agent: t.name, what: "hook-user", dir: userHook, status: "installed" });
       out.push({ agent: t.name, what: "hook-agent", dir: agentHook, status: "installed" });
     } else if (t.name === "opencode") {
@@ -256,9 +293,9 @@ expand with: context expand \${c.hits?.[0]?.handle ?? ""}\`);
 };
 `;
       await fs.mkdir(pluginsDir, { recursive: true });
-      const existing = await fs.readFile(pluginPath, "utf8").catch(() => "");
-      if (existing && existing !== plugin && !opts.force) {
-        out.push({ agent: t.name, what: "hooks-config", dir: pluginPath, status: "conflict", note: "existing plugin; use --force to overwrite" });
+      const before = await fs.readFile(pluginPath, "utf8").catch(() => "");
+      if (before === plugin) {
+        out.push({ agent: t.name, what: "hooks-config", dir: pluginPath, status: "unchanged" });
         continue;
       }
       if (opts.dryRun) {
@@ -266,28 +303,22 @@ expand with: context expand \${c.hits?.[0]?.handle ?? ""}\`);
         continue;
       }
       await fs.writeFile(pluginPath, plugin);
-      out.push({ agent: t.name, what: "hooks-config", dir: pluginPath, status: "installed" });
+      out.push({ agent: t.name, what: "hooks-config", dir: pluginPath, status: before ? "updated" : "installed" });
     } else if (t.name === "codex") {
       // codex supports UserPromptSubmit (prompt injection, same shape as
       // claude) and Stop (common output fields) via ~/.codex/hooks.json.
       const hooksPath = opts.project ? path.join(opts.repo, ".codex", "hooks.json") : path.join(homedir(), ".codex", "hooks.json");
-      const cfg = await loadHooksConfig(t.name, opts, hooksPath, out);
-      if (!cfg) continue;
-      const hooks = cfg.hooks ?? {};
-      if (hooks.SessionStart || hooks.UserPromptSubmit || hooks.Stop) {
-        out.push({ agent: t.name, what: "hooks-config", dir: hooksPath, status: "conflict", note: "existing hooks; use --force to overwrite" });
-        if (!opts.force || opts.dryRun) continue;
-      }
-      if (opts.dryRun) {
-        out.push({ agent: t.name, what: "hooks-config", dir: hooksPath, status: "updated", note: "dry-run" });
-        continue;
-      }
-      hooks.SessionStart = [{ hooks: [{ type: "command", command: sessionHook, timeout: 5 }] }];
-      hooks.UserPromptSubmit = [{ hooks: [{ type: "command", command: userHook, timeout: 30 }] }];
-      hooks.Stop = [{ hooks: [{ type: "command", command: agentHook, timeout: 5 }] }];
-      cfg.hooks = hooks;
-      await fs.writeFile(hooksPath, JSON.stringify(cfg, null, 2) + "\n");
-      out.push({ agent: t.name, what: "hooks-config", dir: hooksPath, status: "updated" });
+      const loaded = await loadHookFile(t.name, opts, hooksPath, out);
+      if (!loaded) continue;
+      const { cfg, existed } = loaded;
+      // matcher only where Codex honors it; SessionStart re-orients after
+      // startup, resume, and compaction
+      applyHookGroups(cfg, [
+        { event: "SessionStart", command: sessionHook, timeout: 10, matcher: "startup|resume|compact" },
+        { event: "UserPromptSubmit", command: userHook, timeout: 15 },
+        { event: "Stop", command: agentHook, timeout: 10 },
+      ]);
+      await writeJsonIfChanged(t.name, hooksPath, cfg, existed, out, opts.dryRun);
       out.push({ agent: t.name, what: "hook-user", dir: userHook, status: "installed" });
       out.push({ agent: t.name, what: "hook-agent", dir: agentHook, status: "installed" });
     } else {
@@ -295,6 +326,22 @@ expand with: context expand \${c.hits?.[0]?.handle ?? ""}\`);
     }
   }
   return out;
+}
+
+/** Write a hooks config only when it changed; report updated/unchanged. */
+async function writeJsonIfChanged(agent: string, configPath: string, cfg: any, existed: boolean, out: InitResult[], dryRun: boolean): Promise<void> {
+  const before = await fs.readFile(configPath, "utf8").catch(() => "");
+  const next = JSON.stringify(cfg, null, 2) + "\n";
+  if (before === next) {
+    out.push({ agent, what: "hooks-config", dir: configPath, status: "unchanged" });
+    return;
+  }
+  if (dryRun) {
+    out.push({ agent, what: "hooks-config", dir: configPath, status: "updated", note: "dry-run" });
+    return;
+  }
+  await fs.writeFile(configPath, next);
+  out.push({ agent, what: "hooks-config", dir: configPath, status: existed ? "updated" : "created" });
 }
 
 async function exists(p: string): Promise<boolean> {

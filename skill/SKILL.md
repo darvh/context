@@ -1,12 +1,16 @@
 ---
 name: context
-description: Deterministic repository discovery for coding agents. Use before non-trivial repository work to find relevant files and symbols.
+description: Deterministic repository discovery for coding agents. For ANY non-trivial task — understanding how something works, finding where code lives, tracing callers, or scoping an edit — get your context from `context observe` BEFORE grepping or reading source files.
 ---
 
 # Context skill
 
-One `context observe` call replaces repetitive searching. Output is navigation
-only — source, Git, and tests are authoritative.
+One `context observe` call replaces repetitive searching. It is `$0` (the
+installed command), needs no API key, and returns in well under a second.
+Output is navigation only — source, Git, and tests are authoritative.
+
+**Pick the one command that fits, run it, act on the answer; don't chain
+tools hoping for more. Most tasks need one call.**
 
 ## When to call (once, before exploration)
 
@@ -28,9 +32,9 @@ only — source, Git, and tests are authoritative.
    | Command | When |
    |---|---|
    | `context map <dir>` | need a file-level map of one directory |
-   | `context follow <symbol> <edge>` | need one-edge-kind trails (call, import, test, ...) |
+   | `context follow <symbol> <edge>` | need callers/callees trails |
    | `context follow <symbol> <symbol2>` | need how two symbols connect |
-   | `context impact <symbol>` | need callers/callees, tests, documented_by, diff |
+   | `context impact <symbol>` | need callers, tests, documented_by, diff |
    | `context expand <handle\|file:line>` | need the exact source span |
 
 4. Read `confidence`: `strong` = trust and go; `conflicted` = several
