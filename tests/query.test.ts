@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { rankSymbols, appendSemanticHits } from "../src/query";
+import { rankSymbols, appendSemanticHits, rankFiles, fuseFileHits } from "../src/query";
 import type { RankedHit } from "../src/query";
 import { buildBm25Index } from "../src/bm25";
 import type { Graph } from "../src/facts";
@@ -212,5 +212,89 @@ describe("irregular morphology + artifacts", () => {
     };
     const out = rankSymbols({ task: "kept alive after restart", graph: g, changed: new Set(), explicitFiles: [], bm25: undefined, docs: [] });
     expect(out[0].symbol.name).toBe("keepAlive");
+  });
+});
+
+describe("file-only search lane", () => {
+  const g: Graph = {
+    symbols: [
+      { id: "src/store.ts::openStore::1", file: "src/store.ts", kind: "function", name: "openStore", sig: "function openStore()", span: { sl: 1, sc: 1, el: 1, ec: 1 }, nameLine: 1, exported: true, test: false, doc: "session store", conf: "exact" },
+      { id: "index.js::app::1", file: "index.js", kind: "function", name: "app", sig: "function app()", span: { sl: 1, sc: 1, el: 1, ec: 1 }, nameLine: 1, exported: true, test: false, doc: "", conf: "exact" },
+    ],
+    edges: [],
+    imports: [],
+  };
+  const files = ["src/store.ts", "index.js", "examples/auth/index.js", "Makefile", "LICENSE", "schema.sql"];
+
+  test("basename-named file ranks first, root entry beats nested copies", () => {
+    const out = rankFiles("where is the index.js entry file", g, files);
+    expect(out[0].file).toBe("index.js");
+    expect(out[0].reason).toContain("basename-match");
+  });
+
+  test("extensionless files match their bare name", () => {
+    const out = rankFiles("the Makefile build targets", g, files);
+    expect(out[0].file).toBe("Makefile");
+  });
+
+  test("partial term coincidence does not name a file", () => {
+    // "regexp.go" must not name go.mod just because both contain "go"
+    const out = rankFiles("fix the bug in regexp.go", g, ["go.mod", "regexp.go"]);
+    expect(out.some((f) => f.file === "go.mod" && f.reason.includes("basename-match"))).toBe(false);
+    expect(out.find((f) => f.file === "regexp.go")?.reason).toContain("basename-match");
+  });
+
+  test("fuse pins a named symbol-less file above symbol hits", () => {
+    const base: RankedHit[] = [
+      { symbol: g.symbols[0], score: 4, reason: ["identifier-match"], conf: "exact" },
+      { symbol: g.symbols[1], score: 3, reason: ["identifier-match"], conf: "exact" },
+    ];
+    const out = fuseFileHits(base, "the Makefile build targets", g, files, []);
+    expect(out[0].symbol.id).toBe("file::Makefile");
+    expect(out[0].score).toBeGreaterThan(base[0].score);
+  });
+
+  test("fuse never regresses an existing symbol answer", () => {
+    const base: RankedHit[] = [{ symbol: g.symbols[0], score: 8, reason: ["exact-name"], conf: "exact" }];
+    const out = fuseFileHits(base, "openStore", g, files, []);
+    expect(out[0].symbol.id).toBe("src/store.ts::openStore::1");
+  });
+});
+
+describe("doc-lane gating on strong code answers", () => {
+  test("a doc must not outrank a strong code answer on a non-doc query", () => {
+    const g: Graph = {
+      symbols: [
+        // matches 3 query terms ("session", "cookie", "signed") -> score 6, a
+        // strong code answer; the doc covers all 4 terms and would lead
+        // without the gating
+        { id: "sessions.py::get_cookie_name::1", file: "sessions.py", kind: "method", name: "get_cookie_name", sig: "def get_cookie_name()", span: { sl: 1, sc: 1, el: 1, ec: 1 }, nameLine: 1, exported: true, test: false, doc: "session cookie signed", conf: "exact" },
+      ],
+      edges: [],
+      imports: [],
+    };
+    const docs: DocFact[] = [
+      { file: "docs/api.rst", text: "session cookies signed and verified in the reference", sections: [{ text: "session cookies signed and verified in the reference", line: 1, endLine: 1 }], hash: "h", size: 10, mtimeMs: 0 },
+    ];
+    const idx = buildBm25Index(g, docs);
+    const out = rankSymbols({ task: "how are session cookies signed and verified", graph: g, changed: new Set(), explicitFiles: [], bm25: idx, docs });
+    expect(out[0].symbol.file).toBe("sessions.py");
+    expect(out[0].symbol.id.startsWith("doc::")).toBe(false);
+  });
+
+  test("a doc still leads when the code lane is weak", () => {
+    const g: Graph = {
+      symbols: [
+        { id: "store.go::Store::1", file: "store.go", kind: "struct", name: "Store", sig: "type Store", span: { sl: 1, sc: 1, el: 1, ec: 1 }, nameLine: 1, exported: true, test: false, doc: "", conf: "exact" },
+      ],
+      edges: [],
+      imports: [],
+    };
+    const docs: DocFact[] = [
+      { file: "docs/archiver-policy.rtf", text: "cold storage retention configured", sections: [{ text: "cold storage retention configured", line: 1, endLine: 1 }], hash: "h", size: 10, mtimeMs: 0 },
+    ];
+    const idx = buildBm25Index(g, docs);
+    const out = rankSymbols({ task: "where is cold storage retention configured", graph: g, changed: new Set(), explicitFiles: [], bm25: idx, docs });
+    expect(out[0].symbol.id.startsWith("doc::")).toBe(true);
   });
 });

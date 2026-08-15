@@ -345,13 +345,11 @@ export function rankFiles(task: string, graph: Graph, files: string[], docs: Doc
     const score = baseMatched * 2 + pathMatched * 1.5 + contentMatched * 0.75 + rootBonus;
     const reason: string[] = [];
     // "named": the query contains the file's full basename — an explicit file
-    // reference, not a partial term coincidence ("send a file" must not name
-    // test/fixtures/broken.send). baseLower covers extensionless files
-    // (LICENSE, Makefile); baseSansExt covers dotted names where the query
-    // drops the extension.
+    // reference, not a partial term coincidence ("regexp.go" must not name
+    // go.mod just because both contain "go"). Extensionless files match their
+    // bare name (LICENSE, Makefile); dotted names need the whole token.
     const baseLower = base.toLowerCase();
-    const baseSansExt = baseLower.replace(/\.[a-z0-9]+$/, "");
-    const named = tset.has(baseLower) || tset.has(baseSansExt) || tset.has(f.toLowerCase());
+    const named = tset.has(baseLower) || tset.has(f.toLowerCase());
     if (named) reason.push("basename-match");
     else if (baseMatched) reason.push("basename-partial");
     if (pathMatched) reason.push("path-match");
