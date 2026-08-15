@@ -157,6 +157,18 @@ describe("compiler facts overlay", () => {
     expect(e!.to).toBe("internal/session/store.go::OpenStore::18");
   });
 
+  test("mergeOverlay is idempotent for repeated warm-build merges", async () => {
+    const { mergeOverlay } = await import("../src/graph/overlay");
+    const b = await buildGo();
+    const overlay: Parameters<typeof mergeOverlay>[1] = {
+      version: 1,
+      edges: [{ from: "cmd/server/main.go::main::13", to: "internal/session/store.go::OpenStore::18", kind: "implement", at: "cmd/server/main.go:13" }],
+    };
+    const once = mergeOverlay(b.graph, overlay);
+    const twice = mergeOverlay(once, overlay);
+    expect(twice.edges.filter((e) => e.kind === "implement")).toHaveLength(1);
+  });
+
   test("no overlay file leaves the graph unchanged", async () => {
     const { loadOverlay } = await import("../src/graph/overlay");
     expect(await loadOverlay(path.join(import.meta.dir, "..", "spike", "fixtures", "go"))).toBeNull();

@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
-import path from "node:path";
 import type { Capsule } from "./assemble";
 import { lastCapsulePath, readJson } from "../core/cache";
+import { repoPath } from "../core/path";
 
 const CONTEXT_LINES = 2;
 const MAX_LINES = 200;
@@ -18,7 +18,9 @@ export async function expandFromCapsule(capsule: Capsule | null, handle: string)
   if (!hit) return null;
   // span-backed: expand the recorded source range with bounded context
   const [sl, el] = hit.range.split("-").map(Number);
-  const abs = path.resolve(capsule!.root, hit.file);
+  const target = await repoPath(capsule!.root, hit.file);
+  if (!target) return null;
+  const abs = target.path;
   if (sl && el) return expandSpan(abs, sl, el);
   return expandFile(abs, hit.line);
 }
@@ -36,7 +38,8 @@ export async function expandDocSection(root: string, file: string, line: number)
       return { file, fromLine: sec.line, toLine: sec.endLine, lines: sec.text.split("\n") };
     }
   } catch {}
-  return expandFile(path.resolve(root, file), line);
+  const target = await repoPath(root, file);
+  return target ? expandFile(target.path, line) : null;
 }
 
 async function expandSpan(file: string, startLine: number, endLine: number): Promise<Expanded | null> {
@@ -69,11 +72,9 @@ export async function resolveExpand(root: string, handle: string): Promise<Expan
   // handle may be file:line or symbol name
   const loc = /^(.+):(\d+)$/.exec(handle);
   if (loc) {
-    const base = path.resolve(root);
-    const p = path.resolve(base, loc[1]);
-    const rel = path.relative(base, p);
-    if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
-    return expandFile(p, Number(loc[2]));
+    const target = await repoPath(root, loc[1]);
+    if (!target) return null;
+    return expandFile(target.path, Number(loc[2]));
   }
   const capsule = await readJson<Capsule>(lastCapsulePath(root));
   const hit = capsule?.hits.find((h) => h.handle === handle);

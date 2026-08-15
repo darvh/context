@@ -46,6 +46,8 @@ export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResu
   const cached = await loadCache(s.tree);
 
   const manifest = s.manifest;
+  const overlayFiles = ["index.scip", ".context/facts.json"];
+  const overlayChanged = overlayFiles.some((f) => manifest[f] !== cached?.manifest[f]);
   const changed = new Set<string>();
   for (const k of Object.keys(manifest)) if (manifest[k] !== cached?.manifest[k]) changed.add(k);
   for (const k of Object.keys(cached?.manifest ?? {})) if (!(k in manifest)) changed.add(k);
@@ -77,7 +79,7 @@ export async function build(cwd: string, opts: ScanOpts = {}): Promise<BuildResu
   const t2 = performance.now();
   // nothing changed: the cached graph IS the resolved graph — re-running
   // resolveFacts over every symbol/edge on a warm build is pure waste
-  let graph = toParse.length === 0 && cached ? cached.graph : resolveFacts([...fileFacts.values()]);
+  let graph = changed.size === 0 && cached && !overlayChanged ? cached.graph : resolveFacts([...fileFacts.values()]);
   // compiler-backed facts overlay: .context/facts.json (any indexer), then a
   // binary SCIP index (index.scip) when present. Tree-sitter stays the
   // universal fallback — unchanged when no overlay exists.

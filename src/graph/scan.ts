@@ -85,7 +85,8 @@ async function collectFiles(root: string, baseIgnored: (p: string, d: boolean) =
   // every directory (real or symlinked) is walked once by realpath, so a
   // directory reachable through both a real path and a symlink — or a link
   // cycle (a -> b -> a) — never yields duplicate paths or hangs
-  const seenDirs = new Set<string>([await fs.realpath(root).catch(() => root)]);
+  const rootReal = await fs.realpath(root).catch(() => path.resolve(root));
+  const seenDirs = new Set<string>([rootReal]);
   while (stack.length) {
     const { rel, layers } = stack.pop()!;
     const dir = rel ? path.join(root, rel) : root;
@@ -131,11 +132,14 @@ async function collectFiles(root: string, baseIgnored: (p: string, d: boolean) =
           if (st.isDirectory()) {
             if (ignored(r, true)) continue;
             const real = await fs.realpath(full);
+            if (!insideRoot(rootReal, real)) continue;
             if (seenDirs.has(real)) continue;
             seenDirs.add(real);
             stack.push({ rel: r, layers: own });
           } else if (st.isFile()) {
             if (ignored(r, false)) continue;
+            const real = await fs.realpath(full);
+            if (!insideRoot(rootReal, real)) continue;
             out.push(r);
           }
         } catch {}
@@ -158,6 +162,11 @@ export interface Manifest {
 }
 
 const MANIFEST_CONCURRENCY = 16;
+
+function insideRoot(root: string, target: string): boolean {
+  const rel = path.relative(root, target);
+  return !rel.startsWith("..") && !path.isAbsolute(rel);
+}
 
 export async function buildManifest(root: string, files: string[]): Promise<Manifest> {
   const m: Manifest = {};

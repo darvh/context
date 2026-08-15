@@ -50,8 +50,8 @@ export async function loadOverlay(root: string): Promise<OverlayFacts | null> {
  *  append below tree-sitter edges. Deterministic. */
 export function mergeOverlay(graph: Graph, overlay: OverlayFacts): Graph {
   if (!overlay.symbols?.length && !overlay.edges?.length) return graph;
-  const symbols = [...graph.symbols];
-  const byId = new Map(graph.symbols.map((s) => [s.id, s]));
+  const symbols = graph.symbols.map((s) => ({ ...s, span: { ...s.span } }));
+  const byId = new Map(symbols.map((s) => [s.id, s]));
   for (const os of overlay.symbols ?? []) {
     const existing = byId.get(os.id);
     if (existing) {
@@ -78,9 +78,19 @@ export function mergeOverlay(graph: Graph, overlay: OverlayFacts): Graph {
     byId.set(n.id, n);
   }
   const edges: Edge[] = [...graph.edges];
+  const edgeIndex = new Map(edges.map((e, i) => [`${e.from}\0${e.to}\0${e.kind}\0${e.at}`, i]));
   for (const oe of overlay.edges ?? []) {
     if (!byId.has(oe.from)) continue;
-    edges.push({ from: oe.from, to: oe.to, name: oe.to.split("::")[1] ?? oe.to, kind: oe.kind, conf: oe.to ? "exact" : "heuristic", at: oe.at ?? `${oe.from.split("::")[0]}:1` });
+    if (oe.to && !byId.has(oe.to)) continue;
+    const at = oe.at ?? `${oe.from.split("::")[0]}:1`;
+    const key = `${oe.from}\0${oe.to}\0${oe.kind}\0${at}`;
+    const existing = edgeIndex.get(key);
+    if (existing !== undefined) {
+      if (oe.to) edges[existing] = { ...edges[existing], conf: "exact" };
+      continue;
+    }
+    edgeIndex.set(key, edges.length);
+    edges.push({ from: oe.from, to: oe.to, name: oe.to.split("::")[1] ?? oe.to, kind: oe.kind, conf: oe.to ? "exact" : "heuristic", at });
   }
   return { symbols, edges, imports: graph.imports };
 }

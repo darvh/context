@@ -218,6 +218,9 @@ export function appendSemanticHits(hits: RankedHit[], sem: SemanticHit[], graph:
   const maxBase = hits[0]?.score ?? 0;
   const authoritative = hits.some((h) => h.reason.some((r) => AUTHORITATIVE_REASONS.includes(r)));
   const weak = hits.length === 0 || (maxBase < WEAK_BASE_SCORE && !authoritative);
+  const docIntent = /\b(doc(?:s|umentation)?|guide|readme|spec(?:ification)?|manual|api reference)\b/i.test(task);
+  const hasCode = hits.some((h) => !h.symbol.id.startsWith("doc::"));
+  const baseFloor = hits.length ? Math.min(...hits.map((h) => h.score)) : 0;
   // weak base: a hit the graph already found but semantics agree with keeps
   // its sim position instead of sinking below newer semantic noise (seen
   // hits are deduped out of the append loop, so without this the correct
@@ -227,7 +230,9 @@ export function appendSemanticHits(hits: RankedHit[], sem: SemanticHit[], graph:
     out = out.map((h) => {
       const sim = simById.get(h.symbol.id);
       if (sim === undefined) return h;
-      return { ...h, score: maxBase + sim, reason: [...h.reason, "semantic"] };
+      const semanticScore = maxBase + sim;
+      const score = h.symbol.id.startsWith("doc::") && hasCode && !docIntent ? Math.min(semanticScore, maxBase - 0.001) : semanticScore;
+      return { ...h, score, reason: [...h.reason, "semantic"] };
     });
   } else if (simById.size && !weak) {
     // hybrid fusion: on a strong base, a BM25-appended (score-0) tail hit
@@ -250,8 +255,12 @@ export function appendSemanticHits(hits: RankedHit[], sem: SemanticHit[], graph:
       sym = byId.get(h.id) ?? null;
     }
     if (!sym || seen.has(sym.id)) continue;
-    // weak base: semantic leads at maxBase+sim; strong base: append below
-    out.push({ symbol: sym, score: weak ? maxBase + h.sim : 0, reason: ["semantic"], conf: sym.conf });
+    // Keep implementation hits ahead of document context unless the query
+    // explicitly asks for documentation. A weak semantic query may still use
+    // docs when no code answer exists, but docs should not displace code.
+    const semanticScore = weak && hits.length === 0 ? maxBase + h.sim : weak ? Math.min(baseFloor - 0.001, h.sim * WEAK_BASE_SCORE) : 0;
+    const score = h.id.startsWith("doc::") && hasCode && !docIntent ? Math.min(semanticScore, maxBase - 0.001) : semanticScore;
+    out.push({ symbol: sym, score, reason: ["semantic"], conf: sym.conf });
     seen.add(sym.id);
   }
   out.sort((a, b) => b.score - a.score || a.symbol.file.localeCompare(b.symbol.file) || a.symbol.nameLine - b.symbol.nameLine);

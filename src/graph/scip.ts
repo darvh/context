@@ -46,11 +46,12 @@ export function nameFromMoniker(symbol: string): string {
   return name.replace(/[()<>\s]/g, "");
 }
 
-function lineAt(bytes: Uint8Array, byte: number): number {
-  let line = 1;
-  const end = Math.min(byte, bytes.length);
-  for (let i = 0; i < end; i++) if (bytes[i] === 0x0a) line++;
-  return line;
+function scipRange(range: number[]): { sl: number; sc: number; el: number; ec: number } {
+  const sl = Math.max(0, range[0] ?? 0);
+  const sc = Math.max(0, range[1] ?? 0);
+  const el = Math.max(sl, range.length >= 4 ? range[2] ?? sl : sl);
+  const ec = Math.max(0, range.length >= 4 ? range[3] ?? sc : range[2] ?? sc);
+  return { sl, sc, el, ec };
 }
 
 interface Def {
@@ -58,9 +59,10 @@ interface Def {
   name: string;
   file: string;
   line: number;
+  startLine: number;
   endLine: number;
-  startByte: number;
-  endByte: number;
+  startChar: number;
+  endChar: number;
   symbol: string;
 }
 
@@ -74,40 +76,28 @@ export async function loadScipIndex(root: string): Promise<OverlayFacts | null> 
   try {
     const idx = fromBinary(IndexSchema, bytes);
     if (!idx.documents.length) return null;
-    return await indexToOverlay(root, idx);
+    return await indexToOverlay(idx);
   } catch {
     return null; // malformed index degrades to tree-sitter
   }
 }
 
-async function indexToOverlay(root: string, idx: import("@c4312/scip").Index): Promise<OverlayFacts | null> {
-  const fileCache = new Map<string, Uint8Array>();
-  const readFile = async (rel: string): Promise<Uint8Array> => {
-    let b = fileCache.get(rel);
-    if (b === undefined) {
-      b = new Uint8Array(0);
-      try {
-        b = new Uint8Array(await Bun.file(path.join(root, rel)).arrayBuffer());
-      } catch {}
-      fileCache.set(rel, b);
-    }
-    return b;
-  };
-
+async function indexToOverlay(idx: import("@c4312/scip").Index): Promise<OverlayFacts | null> {
   // pass 1: definition occurrences -> symbol facts
   const defs = new Map<string, Def>(); // symbol string -> def
   const infoBySymbol = new Map<string, import("@c4312/scip").SymbolInformation>();
   for (const doc of idx.documents) {
     for (const info of doc.symbols ?? []) infoBySymbol.set(info.symbol, info);
-    const fileBytes = await readFile(doc.relativePath);
     for (const occ of doc.occurrences ?? []) {
       if (!occ.symbol || !(occ.symbolRoles & ROLE_DEFINITION)) continue;
       const name = nameFromMoniker(occ.symbol);
       if (!name) continue;
-      const line = lineAt(fileBytes, occ.range[0] ?? 0);
-      const endLine = lineAt(fileBytes, occ.range[1] ?? 0);
+      const r = scipRange(occ.range);
+      const enclosing = scipRange(occ.enclosingRange?.length ? occ.enclosingRange : occ.range);
+      const line = r.sl + 1;
+      const endLine = enclosing.el + 1;
       const id = `${doc.relativePath}::${name}::${line}`;
-      defs.set(occ.symbol, { id, name, file: doc.relativePath, line, endLine, startByte: occ.range[0] ?? 0, endByte: occ.range[1] ?? 0, symbol: occ.symbol });
+      defs.set(occ.symbol, { id, name, file: doc.relativePath, line, startLine: enclosing.sl, endLine, startChar: enclosing.sc, endChar: enclosing.ec, symbol: occ.symbol });
     }
   }
 
@@ -125,18 +115,19 @@ async function indexToOverlay(root: string, idx: import("@c4312/scip").Index): P
   // (containment, else the nearest preceding definition in the document)
   const perDoc = new Map<string, Def[]>();
   for (const d of defs.values()) perDoc.set(d.file, [...(perDoc.get(d.file) ?? []), d]);
-  for (const d of perDoc.values()) d.sort((a, b) => a.startByte - b.startByte);
+  for (const d of perDoc.values()) d.sort((a, b) => a.startLine - b.startLine || a.startChar - b.startChar);
 
   for (const doc of idx.documents) {
-    const fileBytes = await readFile(doc.relativePath);
     const docDefs = perDoc.get(doc.relativePath) ?? [];
     for (const occ of doc.occurrences ?? []) {
       if (!occ.symbol || !(occ.symbolRoles & ROLE_REFERENCE)) continue;
-      const start = occ.range[0] ?? 0;
+      const r = scipRange(occ.range);
       // enclosing definition by containment, else nearest preceding
       let from: Def | undefined;
       for (const d of docDefs) {
-        if (start >= d.startByte && start < Math.max(d.endByte, d.startByte + 1)) {
+        const afterStart = r.sl > d.startLine || (r.sl === d.startLine && r.sc >= d.startChar);
+        const beforeEnd = r.sl < d.endLine - 1 || (r.sl === d.endLine - 1 && r.sc < Math.max(d.endChar, d.startChar + 1));
+        if (afterStart && beforeEnd) {
           from = d;
           break;
         }
@@ -144,7 +135,7 @@ async function indexToOverlay(root: string, idx: import("@c4312/scip").Index): P
       if (!from) {
         let best: Def | undefined;
         for (const d of docDefs) {
-          if (d.startByte <= start) best = d;
+          if (d.startLine < r.sl || (d.startLine === r.sl && d.startChar <= r.sc)) best = d;
           else break;
         }
         from = best;
@@ -152,7 +143,7 @@ async function indexToOverlay(root: string, idx: import("@c4312/scip").Index): P
       if (!from) continue;
       const to = defIdBySymbol.get(occ.symbol);
       if (to === from.id) continue;
-      edges.push({ from: from.id, to: to ?? "", kind: "ref", at: `${doc.relativePath}:${lineAt(fileBytes, start)}` });
+      edges.push({ from: from.id, to: to ?? "", kind: "ref", at: `${doc.relativePath}:${r.sl + 1}` });
     }
     if (edges.length >= MAX_EDGES) break;
   }

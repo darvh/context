@@ -13,6 +13,7 @@ import { appendSemanticHits } from "./rank/query";
 import { estTokens } from "./core/tokens";
 import { buildInfo } from "./cli/version";
 import type { ScanOpts } from "./graph/scan";
+import { repoPath } from "./core/path";
 
 const HELP = `context — deterministic discovery compiler
 
@@ -99,7 +100,8 @@ async function cmdPrepare(args: Args) {
 
   // session-delta: symbols already shown to the agent in this task session are
   // down-weighted (novelty); the disposable session state is keyed by tree
-  const session = await readJson<{ tree: string; seen: string[] }>(sessionStatePath(b.repoRoot));
+  const sessionId = process.env.CONTEXT_SESSION_ID?.trim();
+  const session = sessionId ? await readJson<{ tree: string; seen: string[] }>(sessionStatePath(b.repoRoot, sessionId)) : null;
   const seen = session && session.tree === b.treeHash ? new Set(session.seen) : undefined;
 
   // pipeline: exact/lexical -> confidence gate -> semantic lane (opt-in).
@@ -128,7 +130,7 @@ async function cmdPrepare(args: Args) {
   try {
     await writeJson(lastCapsulePath(b.repoRoot), capsule);
     // record what this observation showed, for the next one in this session
-    await writeJson(sessionStatePath(b.repoRoot), { tree: b.treeHash, seen: capsule.hits.map((h) => `${h.file}:${h.line}`) }).catch(() => {});
+    if (sessionId) await writeJson(sessionStatePath(b.repoRoot, sessionId), { tree: b.treeHash, seen: capsule.hits.map((h) => `${h.file}:${h.line}`) }).catch(() => {});
   } catch {
     // capsule write failure is recoverable: output still goes to stdout
   }
@@ -176,8 +178,8 @@ async function cmdRead(args: Args) {
     process.exit(1);
   }
   const root = (await (await import("./graph/scan")).findRoot(args.root)) ?? args.root;
-  const rel = path.relative(root, path.resolve(root, file));
-  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+  const target = await repoPath(root, file);
+  if (!target) {
     console.error(`context: path escapes the repo: ${file}`);
     process.exit(1);
   }
@@ -186,13 +188,13 @@ async function cmdRead(args: Args) {
   // cached extracted markdown; text files fall through to the raw read.
   // ponytail: extracted text is bounded at 64k chars (doc lane ceiling); a
   // true full-doc dump would need a re-extract — add when someone hits it.
-  const d = b.docs.find((x) => x.file === file);
+  const d = b.docs.find((x) => x.file === target.rel);
   if (d?.text) {
     process.stdout.write(d.text + "\n");
     return;
   }
   try {
-    process.stdout.write(await fs.readFile(path.resolve(root, file), "utf8"));
+    process.stdout.write(await fs.readFile(target.path, "utf8"));
   } catch {
     console.error(`context: no such file: ${file}`);
     process.exit(1);

@@ -55,8 +55,7 @@ export async function loadAllTasks(useReal: boolean): Promise<Task[]> {
 export async function buildTaskDirs(allTasks: Task[], useReal: boolean): Promise<Map<string, string>> {
   const taskDirs = new Map<string, string>();
   for (const t of allTasks) {
-    const src = t.fixture ? path.join(FIXTURES, t.repo) : path.join(REAL_OUT, t.repo);
-    taskDirs.set(t.repo, src);
+    if (t.fixture) taskDirs.set(t.repo, path.join(FIXTURES, t.repo));
   }
   if (useReal) {
     const cloned = await cloneReal(new Set(allTasks.map((t) => t.repo)));

@@ -7,7 +7,7 @@ import type { DocFact } from "./doc";
 
 // Bump CACHE_VERSION whenever extraction/ranking schema semantics change so
 // stale cached facts are ignored and rebuilt.
-export const CACHE_VERSION = "context-cache-v8";
+export const CACHE_VERSION = "context-cache-v9";
 
 export interface CacheRecord {
   version: string;
@@ -53,8 +53,9 @@ export function hookStatePath(root: string): string {
 
 /** Per-repo disposable session state (what the agent already saw), keyed by
  *  tree hash so a changed tree starts a fresh session. */
-export function sessionStatePath(root: string): string {
-  return path.join(cacheDir(), `session-${repoKey(root)}.json`);
+export function sessionStatePath(root: string, sessionId = "default"): string {
+  const sid = createHash("sha256").update(sessionId).digest("hex").slice(0, 12);
+  return path.join(cacheDir(), `session-${repoKey(root)}-${sid}.json`);
 }
 
 /**

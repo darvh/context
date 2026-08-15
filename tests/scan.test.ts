@@ -25,7 +25,7 @@ describe("scan ignore override", () => {
       await fs.symlink(path.join(root, "lib"), path.join(root, "links", "to-lib"));
       await fs.symlink(path.join(root, "links"), path.join(root, "links", "loop"));
       const f = (await scan(root)).files;
-      expect(f).toContain("lib/external.ts");
+      expect(f).not.toContain("lib/external.ts");
       expect(f).toContain("lib/a.ts");
       // a dir reachable via both the real path and a symlink is walked once —
       // the symlinked path is skipped so no file appears twice

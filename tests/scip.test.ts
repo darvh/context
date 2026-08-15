@@ -24,9 +24,9 @@ describe("scip index ingest", () => {
           relativePath: "src/a.ts",
           language: "typescript",
           occurrences: [
-            { symbol: "typescript src/a.ts;func::open", range: [16, 20], symbolRoles: 4 }, // definition open, line 1
-            { symbol: "typescript src/a.ts;func::helper", range: [41, 47], symbolRoles: 16 }, // reference helper inside open's line
-            { symbol: "typescript src/a.ts;func::helper", range: [58, 64], symbolRoles: 4 }, // definition helper, line 2
+            { symbol: "typescript src/a.ts;func::open", range: [0, 16, 0, 20], enclosingRange: [0, 0, 1, 1], symbolRoles: 4 }, // definition open, line 1; body spans two lines
+            { symbol: "typescript src/a.ts;func::helper", range: [0, 41, 0, 47], symbolRoles: 16 }, // reference helper inside open's line
+            { symbol: "typescript src/a.ts;func::helper", range: [1, 16, 1, 22], symbolRoles: 4 }, // definition helper, line 2
           ],
           symbols: [
             { symbol: "typescript src/a.ts;func::open", kind: 21, relationships: [{ symbol: "typescript src/base.ts;interface::Base", isImplementation: true }] },
@@ -41,6 +41,7 @@ describe("scip index ingest", () => {
     const open = facts!.symbols!.find((s) => s.name === "open");
     expect(open).toBeDefined();
     expect(open!.line).toBe(1);
+    expect(open!.endLine).toBe(2);
     expect(open!.kind).toBe("function");
     const helper = facts!.symbols!.find((s) => s.name === "helper");
     expect(helper!.line).toBe(2);

@@ -3,7 +3,7 @@ import path from "node:path";
 import { rankSymbols, appendSemanticHits, explicitFilesFromTask, queryConfidence, rankFiles, fuseFileHits } from "../src/rank/query";
 import { buildBm25Index } from "../src/rank/bm25";
 import { repoKey } from "../src/core/cache";
-import { semanticEnabled, semanticSearch } from "../src/rank/semantic";
+import { semanticSearch } from "../src/rank/semantic";
 import { assemble } from "../src/out/assemble";
 import { capsuleToJson } from "../src/out/render";
 import { estTokens } from "../src/core/tokens";
@@ -33,7 +33,7 @@ const BUDGET_TOKENS = 1200;
 
 const args = process.argv.slice(2);
 const useReal = args.includes("--real") || args.includes("real");
-const useSemantic = args.includes("--semantic") || (await semanticEnabled());
+const useSemantic = args.includes("--semantic") || args.includes("semantic");
 const jsonArg = args.indexOf("--json");
 const jsonOut = jsonArg >= 0 ? args[jsonArg + 1] : null;
 
@@ -49,6 +49,7 @@ interface TaskResult {
   mrr: number;
   topFiles: string[];
   evidenceRecall: number;
+  evidenceAnnotated: boolean;
   unrelatedItems: number;
   stepsToEvidence: number;
   outputTokens: number;
@@ -78,22 +79,30 @@ async function runVariant(name: string, tasks: Task[], builds: Map<string, RepoB
   let indexBytes = 0;
   let cacheHits = 0;
   let parsed = 0;
+  const measured = new Set<string>();
+  const indexed = new Set<string>();
   const bm25ByRepo = new Map<string, ReturnType<typeof buildBm25Index>>();
 
   for (const t of tasks) {
     const rb = builds.get(t.repo)!;
     const b2 = rb.warm;
-    cold.push(rb.coldMs);
-    warm.push(rb.warmMs);
-    cacheHits += b2.reused;
-    parsed += b2.parsed + rb.cold.parsed;
+    if (!measured.has(t.repo)) {
+      measured.add(t.repo);
+      cold.push(rb.coldMs);
+      warm.push(rb.warmMs);
+      cacheHits += b2.reused;
+      parsed += b2.parsed + rb.cold.parsed;
+    }
 
     let idx2 = bm25ByRepo.get(t.repo);
     if (hybrid && !idx2) {
       idx2 = buildBm25Index(b2.graph, b2.docs);
       bm25ByRepo.set(t.repo, idx2);
     }
-    if (idx2) indexBytes = Math.max(indexBytes, idx2.sizeBytes);
+    if (idx2 && !indexed.has(t.repo)) {
+      indexed.add(t.repo);
+      indexBytes += idx2.sizeBytes;
+    }
 
     const changed = new Set(t.changed);
     let hits: RankedHit[] = rankSymbols({
@@ -130,7 +139,7 @@ async function runVariant(name: string, tasks: Task[], builds: Map<string, RepoB
     const covered = evidence.filter(([file, sl, el]) =>
       topK.some((h) => h.symbol.file === file && h.symbol.span.sl <= sl && h.symbol.span.el >= el),
     );
-    const evidenceRecall = evidence.length ? covered.length / evidence.length : 1;
+    const evidenceRecall = evidence.length ? covered.length / evidence.length : 0;
 
     // unrelated items: capsule hits driven ONLY by the dirty lane (recent-
     // change as sole reason) and outside expectations — the pollution metric
@@ -154,6 +163,7 @@ async function runVariant(name: string, tasks: Task[], builds: Map<string, RepoB
       mrr: m.mrr,
       topFiles: m.topFiles,
       evidenceRecall,
+      evidenceAnnotated: evidence.length > 0,
       unrelatedItems: dirtyHits,
       stepsToEvidence,
       outputTokens,
@@ -172,11 +182,15 @@ async function runFileVariant(tasks: Task[], builds: Map<string, RepoBuild>): Pr
   const results: TaskResult[] = [];
   const cold: number[] = [];
   const warm: number[] = [];
+  const measured = new Set<string>();
   for (const t of tasks) {
     const rb = builds.get(t.repo)!;
     const b2 = rb.warm;
-    cold.push(rb.coldMs);
-    warm.push(rb.warmMs);
+    if (!measured.has(t.repo)) {
+      measured.add(t.repo);
+      cold.push(rb.coldMs);
+      warm.push(rb.warmMs);
+    }
     const ranked = rankFiles(t.query, b2.graph, b2.files, b2.docs);
     const topK = ranked.slice(0, t.topK);
     const topFiles = topK.map((f) => f.file);
@@ -198,6 +212,7 @@ async function runFileVariant(tasks: Task[], builds: Map<string, RepoBuild>): Pr
       mrr: rr ? 1 / rr : 0,
       topFiles,
       evidenceRecall: 1,
+      evidenceAnnotated: false,
       unrelatedItems: 0,
       stepsToEvidence: firstExpected ? topFiles.indexOf(firstExpected) + 1 : Infinity,
       outputTokens: 0,
@@ -217,7 +232,9 @@ function summarize(v: VariantResult) {
   console.log(`\n[${v.name}]`);
   console.log(`  recall@k files:   ${(mean((t) => t.recallFiles) * 100).toFixed(1)}%  (tasks with ≥1 relevant file in top-k: ${recallFiles}/${n})`);
   console.log(`  recall@k symbols: ${(mean((t) => t.recallSymbols) * 100).toFixed(1)}%`);
-  console.log(`  evidence recall:  ${(mean((t) => t.evidenceRecall) * 100).toFixed(1)}%`);
+  const evidenceTasks = v.tasks.filter((t) => t.evidenceAnnotated);
+  const evidenceMean = evidenceTasks.length ? evidenceTasks.reduce((s, t) => s + t.evidenceRecall, 0) / evidenceTasks.length : 0;
+  console.log(`  evidence recall:  ${(evidenceMean * 100).toFixed(1)}%  (${evidenceTasks.length}/${n} annotated tasks)`);
   console.log(`  unrelated items:  ${v.tasks.reduce((s, t) => s + t.unrelatedItems, 0)}  (dirty-file hits outside expectations; 0 = clean)`);
   const steps = v.tasks.filter((t) => Number.isFinite(t.stepsToEvidence)).map((t) => t.stepsToEvidence);
   console.log(`  calls-to-evidence: ${steps.length ? (steps.reduce((s, x) => s + x, 0) / steps.length).toFixed(2) : "-"} avg rank of first expected file`);
@@ -250,18 +267,20 @@ function summarize(v: VariantResult) {
 
 function perTask(variants: VariantResult[]) {
   const cols = variants.map((v) => ({ name: v.name, byId: new Map(v.tasks.map((t) => [t.id, t])) }));
-  console.log(`\nper-task (recall files / mrr):`);
+  console.log(`\nper-task (recall files / symbols / evidence / mrr):`);
   console.log(`  ${"id".padEnd(26)} ${cols.map((c) => c.name.padEnd(34)).join("")} verdict`);
   let regressed = 0;
   for (const id of cols[0].byId.keys()) {
     const rows = cols.map((c) => c.byId.get(id));
     if (rows.some((r) => !r)) continue;
-    const fmt = (r: TaskResult) => `${(r.recallFiles * 100).toFixed(0).padStart(3)}% / ${r.mrr.toFixed(2).padStart(5)} e${(r.evidenceRecall * 100).toFixed(0).padStart(3)}%  [${r.topFiles.slice(0, 2).join(", ")}]`;
+    const fmt = (r: TaskResult) => `${(r.recallFiles * 100).toFixed(0).padStart(3)}% / ${(r.recallSymbols * 100).toFixed(0).padStart(3)}% / e${(r.evidenceRecall * 100).toFixed(0).padStart(3)}% / ${r.mrr.toFixed(2).padStart(5)}  [${r.topFiles.slice(0, 2).join(", ")}]`;
     const verdict: string[] = [];
     for (let i = 1; i < rows.length; i++) {
       const prev = rows[i - 1]!;
       const cur = rows[i]!;
       if (cur.recallFiles < prev.recallFiles - 1e-9) verdict.push(`REG ${cols[i].name}`);
+      else if (cur.recallSymbols < prev.recallSymbols - 1e-9) verdict.push(`sym${cols[i].name}`);
+      else if (cur.evidenceAnnotated && prev.evidenceAnnotated && cur.evidenceRecall < prev.evidenceRecall - 1e-9) verdict.push(`evidence${cols[i].name}`);
       else if (cur.mrr < prev.mrr - 0.01) verdict.push(`mrr${cols[i].name}`);
     }
     if (verdict.length) regressed++;
@@ -275,18 +294,24 @@ function perTask(variants: VariantResult[]) {
 
 const allTasks = await loadAllTasks(useReal);
 const taskDirs = await buildTaskDirs(allTasks, useReal);
+const missingReal = useReal ? allTasks.filter((t) => !t.fixture && !taskDirs.has(t.repo)) : [];
+if (missingReal.length) {
+  console.error(`eval: ${missingReal.length} real task repo(s) unavailable: ${[...new Set(missingReal.map((t) => t.repo))].join(", ")}`);
+  process.exitCode = 1;
+}
+const availableTasks = allTasks.filter((t) => taskDirs.has(t.repo));
 // build each repo once (cold+warm), share across all variants
 const builds = await buildPerRepo(taskDirs);
 
 const variants: VariantResult[] = [];
-const base = await runVariant("baseline (graph+lexical)", allTasks, builds, false, false);
+const base = await runVariant("baseline (graph+lexical)", availableTasks, builds, false, false);
 variants.push(base);
 summarize(base);
-const hybrid = await runVariant("hybrid (graph+lexical+bm25)", allTasks, builds, true, false);
+const hybrid = await runVariant("hybrid (graph+lexical+bm25)", availableTasks, builds, true, false);
 variants.push(hybrid);
 summarize(hybrid);
 if (useSemantic) {
-  const sem = await runVariant("hybrid (+bm25+semantic)", allTasks, builds, true, true);
+  const sem = await runVariant("hybrid (+bm25+semantic)", availableTasks, builds, true, true);
   variants.push(sem);
   summarize(sem);
 }
@@ -296,7 +321,7 @@ perTask(variants);
 // file recall alone (the answer to a file query IS the file). Reported
 // separately, not in the per-task variant comparison — it is a different
 // retrieval mode, not a variant of the symbol lane.
-const fileTasks = allTasks.filter((t) => t.type === "file");
+const fileTasks = availableTasks.filter((t) => t.type === "file");
 if (fileTasks.length) {
   const fv = await runFileVariant(fileTasks, builds);
   const n = fv.tasks.length;

@@ -66,11 +66,18 @@ describe("appendSemanticHits hybrid fusion", () => {
     expect(out.find((h) => h.symbol.id === "a.go::A::1")!.score).toBe(10);
   });
 
-  test("weak base: graph hits semantics confirms keep maxBase+sim position", () => {
+  test("weak base: semantic confirmation boosts existing hits without displacing lexical hits", () => {
     const weakBase: RankedHit = { symbol: g.symbols[0], score: 2, reason: ["identifier-match"], conf: "exact" };
     const out = appendSemanticHits([weakBase], [{ id: "a.go::A::1", sim: 0.5 }, { id: "b.go::B::1", sim: 0.4 }], g, [], "a");
     expect(out.find((h) => h.symbol.id === "a.go::A::1")!.score).toBeCloseTo(2.5);
-    expect(out.find((h) => h.symbol.id === "b.go::B::1")!.score).toBeCloseTo(2.4);
+    expect(out.find((h) => h.symbol.id === "b.go::B::1")!.score).toBeCloseTo(1.999);
+  });
+
+  test("weak non-document query keeps semantic docs below code", () => {
+    const docs: DocFact[] = [{ file: "docs/store.md", text: "store guide", sections: [{ text: "store guide", line: 1, endLine: 1 }], hash: "h", size: 11, mtimeMs: 0 }];
+    const code: RankedHit = { symbol: g.symbols[0], score: 2, reason: ["identifier-match"], conf: "exact" };
+    const out = appendSemanticHits([code], [{ id: "doc::docs/store.md", sim: 1 }], g, docs, "where does the app store values?");
+    expect(out[0].symbol.id).toBe(code.symbol.id);
   });
 });
 
