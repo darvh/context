@@ -21,7 +21,7 @@ export const AGENT_NAMES = TARGETS.map((t) => t.name);
 
 export interface InitResult {
   agent: string;
-  what: string; // skill | hook-user | hook-edit | hooks-config
+  what: string; // skill | hook-user | hook-edit | hooks-config | instructions
   dir: string;
   status: Status;
   note?: string;
@@ -34,6 +34,11 @@ export interface InitOptions {
   dryRun: boolean;
   only: string[]; // agent names; empty = all
   hooks: boolean; // install hook adapters (default; --no-hooks opts out)
+  /** install the one-line steering instruction into each host's global
+   *  instructions file (default; --no-instructions opts out). Only hosts
+   *  without a SessionStart hook get it (claude-code/codex inject the same
+   *  nudge from the hook): ~40 tokens, always in context, zero runtime. */
+  instructions?: boolean;
   /** installer mode: create absent home-scope agent dirs instead of
    *  reporting agent-miss (manual `context init` never creates silently) */
   create?: boolean;
@@ -168,6 +173,9 @@ export async function init(opts: InitOptions): Promise<InitResult[]> {
 
   if (opts.hooks) {
     out.push(...(await installHooks(opts)));
+  }
+  if (opts.instructions !== false) {
+    out.push(...(await installInstructions(opts)));
   }
   return out;
 }
@@ -360,6 +368,73 @@ expand with: context expand \${c.hits?.[0]?.handle ?? ""}\`);
     } else {
       out.push({ agent: t.name, what: "hooks-config", dir: "", status: "unselected", note: "hook wiring not shipped for this host yet" });
     }
+  }
+  return out;
+}
+
+// --no-instructions is the opt-out; the steering line installs by default.
+//
+// Only for hosts WITHOUT a session-start hook (claude-code + codex inject
+// the same directive from SessionStart, so a static line would be pure
+// duplication). Each host's global instructions file, mirroring
+// resolveAgent's home dirs: opencode reads AGENTS.md under
+// ~/.config/opencode, antigravity/copilot/pi under the ~/.agents standard
+// home, cursor under ~/.cursor. Project scope: every non-claude agent reads
+// the repo-root AGENTS.md (one shared file, one marker block).
+const INSTRUCTIONS_FILES: Record<string, { home: string; project: string }> = {
+  opencode: { home: "AGENTS.md", project: "AGENTS.md" },
+  antigravity: { home: "AGENTS.md", project: "AGENTS.md" },
+  pi: { home: "AGENTS.md", project: "AGENTS.md" },
+  cursor: { home: "AGENTS.md", project: "AGENTS.md" },
+  copilot: { home: "AGENTS.md", project: "AGENTS.md" },
+};
+
+const INSTRUCTION_START = "<!-- context:start -->";
+const INSTRUCTION_END = "<!-- context:end -->";
+
+// One line, ~40 tokens: the always-in-context nudge. Full command reference
+// lives in the skill (loaded on demand) and the SessionStart hook text.
+const INSTRUCTION_LINE =
+  "[context] Before non-trivial multi-file work, run `context observe \"<task>\"` once — task-relevant dirs/files/symbols with exact file:line " +
+  "(`context map`/`follow`/`impact`/`expand` drill-down; one call answers most tasks; skip for one-file edits). Navigation only — read the source for evidence.";
+const INSTRUCTION_BLOCK = `${INSTRUCTION_START}\n${INSTRUCTION_LINE}\n${INSTRUCTION_END}`;
+
+/** Marker-block upsert: replace our block in place, never touch foreign text. */
+function applyInstructionBlock(before: string): string {
+  if (before.includes(INSTRUCTION_START)) {
+    return before.replace(new RegExp(`${INSTRUCTION_START}[\\s\\S]*?${INSTRUCTION_END}`), INSTRUCTION_BLOCK);
+  }
+  return `${before.trimEnd()}\n\n${INSTRUCTION_BLOCK}\n`;
+}
+
+/** Install the steering line into each agent's instructions file. Home scope
+ *  never creates absent agent dirs (same agent-miss rule as the skill);
+ *  shared project files (repo AGENTS.md) are byte-idempotent across agents. */
+async function installInstructions(opts: InitOptions): Promise<InitResult[]> {
+  const out: InitResult[] = [];
+  const agents = opts.only.length ? TARGETS.filter((t) => opts.only.includes(t.name)) : TARGETS;
+  for (const t of agents) {
+    const rel = INSTRUCTIONS_FILES[t.name];
+    if (!rel) continue;
+    const file = opts.project
+      ? path.join(opts.repo, rel.project)
+      : path.join(path.dirname(resolveAgent(t, opts)), rel.home);
+    const homeDir = path.dirname(file);
+    if (!opts.project && !opts.create && !(await exists(homeDir))) {
+      out.push({ agent: t.name, what: "instructions", dir: file, status: "agent-miss" });
+      continue;
+    }
+    const before = await fs.readFile(file, "utf8").catch(() => "");
+    const next = applyInstructionBlock(before);
+    let status: Status;
+    if (next === before) status = "unchanged";
+    else if (opts.dryRun) status = before ? "updated" : "created";
+    else {
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, next);
+      status = before ? "updated" : "created";
+    }
+    out.push({ agent: t.name, what: "instructions", dir: file, status, note: opts.dryRun ? "dry-run" : undefined });
   }
   return out;
 }

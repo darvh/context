@@ -74,8 +74,7 @@ export interface QueryInput {
  *  the graph, only for capsule rendering. The span covers the section that
  *  matched so `context expand` lands on the answer region; the sig records the
  *  section ordinal and heading when the section is heading-led. */
-export function docSymbol(d: DocFact, line = 1): SymbolFact {
-  const name = d.file.split("/").pop() ?? d.file;
+export function docSymbol(d: DocFact, line = 1): SymbolFact {  const name = d.file.split("/").pop() ?? d.file;
   const idx = d.sections.findIndex((s) => s.line === line);
   let sig = "";
   let endLine = line;
@@ -98,6 +97,56 @@ export function docSymbol(d: DocFact, line = 1): SymbolFact {
     doc: d.text.slice(0, 200),
     conf: "heuristic",
   };
+}
+
+/** Transient symbol for a file-only hit — never stored in the graph. Lets a
+ *  symbol-less file (Makefile, LICENSE, schema.sql, an entry point) appear in
+ *  the capsule: the answer to "where is the Makefile" IS the file. */
+function fileSymbol(f: string): SymbolFact {
+  return {
+    id: `file::${f}`,
+    file: f,
+    kind: "file",
+    name: f.split("/").pop() ?? f,
+    sig: f,
+    span: { sl: 1, sc: 1, el: 1, ec: 1 },
+    nameLine: 1,
+    exported: false,
+    test: false,
+    doc: "",
+    conf: "heuristic",
+  };
+}
+
+/** Fuse the file-only lane into symbol hits: a file the task names by
+ *  basename (or that matches strongly) surfaces as a file-level hit. Gated to
+ *  files with no symbol hit already — symbol answers stay authoritative; the
+ *  file lane only fills the symbol-less gap. A basename match is an explicit
+ *  file reference (the query names the file), so it pins above every symbol
+ *  hit; weaker path/content matches append below. */
+export function fuseFileHits(hits: RankedHit[], task: string, graph: Graph, files: string[], docs: DocFact[]): RankedHit[] {
+  const ranked = rankFiles(task, graph, files, docs);
+  if (!ranked.length) return hits;
+  const hitFiles = new Set(hits.map((h) => h.symbol.file));
+  const maxGraph = hits[0]?.score ?? 0;
+  const out = [...hits];
+  const seen = new Set(out.map((h) => h.symbol.id));
+  // named pins first, so they outrank content-matched supplements even when
+  // the symbol lane is empty (maxGraph=0): "the license" is LICENSE, not the
+  // Readme that mentions licensing
+  for (const f of ranked) {
+    if (!f.reason.includes("basename-match")) continue;
+    if (hitFiles.has(f.file) || seen.has(`file::${f.file}`)) continue;
+    seen.add(`file::${f.file}`);
+    out.push({ symbol: fileSymbol(f.file), score: maxGraph + 1 + f.score / 100, reason: f.reason.slice(0, 2), conf: "heuristic" });
+  }
+  for (const f of ranked.slice(0, 5)) {
+    if (hitFiles.has(f.file) || seen.has(`file::${f.file}`)) continue;
+    seen.add(`file::${f.file}`);
+    out.push({ symbol: fileSymbol(f.file), score: Math.min(f.score * 2, maxGraph), reason: f.reason.slice(0, 2), conf: "heuristic" });
+  }
+  out.sort((a, b) => b.score - a.score || a.symbol.file.localeCompare(b.symbol.file) || a.symbol.nameLine - b.symbol.nameLine);
+  return out;
 }
 
 // a base (graph+lexical) hit at or above this score is a genuine lexical
@@ -210,8 +259,7 @@ export function appendSemanticHits(hits: RankedHit[], sem: SemanticHit[], graph:
 }
 
 /** Extract repo-relative file paths the task text names directly. */
-export function explicitFilesFromTask(task: string, files: string[]): string[] {
-  const out = new Set<string>();
+export function explicitFilesFromTask(task: string, files: string[]): string[] {  const out = new Set<string>();
   const lower = task.toLowerCase();
   for (const f of files) {
     const base = f.split("/").pop()!;
@@ -233,6 +281,85 @@ export function explicitFilesFromTask(task: string, files: string[]): string[] {
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export interface RankedFile {
+  file: string;
+  score: number;
+  reason: string[];
+}
+
+/**
+ * File-only search: rank repo files by query-term overlap on PATH + BASENAME
+ * + aggregated symbol terms (names/sigs/docs/strings). No symbol granularity —
+ * the answer is a FILE, so a symbol-less file (Makefile, LICENSE, schema.sql,
+ * an entry point with no parseable symbols) can surface without any symbol
+ * hit. Basename matches weigh double (a query naming "store.go" means the
+ * file, wherever it lives); path tokens weigh once. Symbol terms fill in the
+ * paraphrase case: "the database schema" matches schema.sql's own content.
+ * Deterministic: score desc, then path.
+ */
+export function rankFiles(task: string, graph: Graph, files: string[], docs: DocFact[] = []): RankedFile[] {
+  const rv = repoVocab(graph, docs);
+  const t = meaningfulTerms(task).flatMap(expandIrregular).flatMap((term) => splitByRepoVocab(term, rv.vocab, rv.symbolCount, rv.freq, rv.cooccur));
+  const tset = new Set(t);
+  if (!tset.size) return [];
+
+  // per-file aggregated content terms (symbols + strings + doc text)
+  const fileContent = new Map<string, Set<string>>();
+  for (const s of graph.symbols) {
+    if (s.kind === "import") continue;
+    let set = fileContent.get(s.file);
+    if (!set) {
+      set = new Set();
+      fileContent.set(s.file, set);
+    }
+    for (const term of symTermsFor(s, graph)) set.add(term);
+  }
+  const docContent = new Map<string, Set<string>>();
+  for (const d of docs) {
+    docContent.set(d.file, docTermsFor(d));
+  }
+
+  const out: RankedFile[] = [];
+  const seen = new Set<string>();
+  for (const f of files) {
+    if (seen.has(f)) continue;
+    seen.add(f);
+    const pathTerms = new Set(terms(f));
+    const base = f.split("/").pop() ?? f;
+    const baseTerms = new Set(terms(base));
+    let pathMatched = 0;
+    let baseMatched = 0;
+    for (const term of tset) {
+      if (baseTerms.has(term)) baseMatched++;
+      else if (pathTerms.has(term)) pathMatched++;
+    }
+    const content = fileContent.get(f) ?? docContent.get(f);
+    let contentMatched = 0;
+    if (content) for (const term of tset) if (content.has(term)) contentMatched++;
+    if (baseMatched + pathMatched + contentMatched === 0) continue;
+    // root-level entry files beat nested copies with the same basename
+    // ("the index file" means index.js at the root, not examples/auth/index.js)
+    const rootBonus = base === f ? 0.5 : 0;
+    const score = baseMatched * 2 + pathMatched * 1.5 + contentMatched * 0.75 + rootBonus;
+    const reason: string[] = [];
+    // "named": the query contains the file's full basename — an explicit file
+    // reference, not a partial term coincidence ("send a file" must not name
+    // test/fixtures/broken.send). baseLower covers extensionless files
+    // (LICENSE, Makefile); baseSansExt covers dotted names where the query
+    // drops the extension.
+    const baseLower = base.toLowerCase();
+    const baseSansExt = baseLower.replace(/\.[a-z0-9]+$/, "");
+    const named = tset.has(baseLower) || tset.has(baseSansExt) || tset.has(f.toLowerCase());
+    if (named) reason.push("basename-match");
+    else if (baseMatched) reason.push("basename-partial");
+    if (pathMatched) reason.push("path-match");
+    if (contentMatched) reason.push("content-match");
+    out.push({ file: f, score, reason });
+  }
+  out.sort((a, b) => b.score - a.score || a.file.localeCompare(b.file));
+  return out;
 }
 
 interface ScoreState {
@@ -560,14 +687,18 @@ export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs, c
       // when the doc covers MORE query terms than the best code symbol (a doc
       // query surfaces its doc) and no authoritative signal pins the answer
       // (exact-name / recent-change / explicit-file). Otherwise docs append at
-      // 0 — the graph lane stays authoritative. A gated doc is floored at its
-      // own coverage in graph-score space (2/term) so BM25's different
-      // magnitude can't lose to a weak code match.
+      // 0 — the graph lane stays authoritative.
       // explicit change/history intent pins the code answer too — a doc must
       // not outrank "where was this edited" queries
       const pinned = recentIntent || historyIntent || out.some((h) => h.reason.some((r) => AUTHORITATIVE_REASONS.includes(r) || r === "exact-name"));
       const docIntent = DOC_INTENT.test(taskLower);
       const maxGraph = out[0]?.score ?? 0;
+      // a doc may only outrank code when the query asks for docs explicitly
+      // (doc-intent words) or the code lane has no genuine answer. On a strong
+      // non-doc query, a reference doc that happens to cover all terms must
+      // not bury the code answer ("how are session cookies signed" -> the
+      // implementation, not docs/api.rst).
+      const docLeads = docIntent || maxGraph < WEAK_BASE_SCORE;
       const docHits = hits.filter((h) => h.kind === "doc");
       for (const hit of docHits) {
         const d = (docs ?? [])[hit.doc ?? -1];
@@ -580,8 +711,9 @@ export function rankSymbols({ task, graph, changed, explicitFiles, bm25, docs, c
         // answer: on doc-intent queries it ranks above every graph hit
         // (maxGraph+1), with the BM25 score as a fractional tiebreak among
         // qualifying docs. Otherwise it keeps a capped BM25 score below the
-        // code. Gated docs (pinned answer / no coverage edge) append at 0.
-        const gated = pinned || coverage <= maxCodeMatched;
+        // code. Gated docs (pinned answer / no coverage edge / strong code
+        // lane) append at 0.
+        const gated = pinned || !docLeads || coverage <= maxCodeMatched;
         const score = gated
           ? 0
           : docIntent

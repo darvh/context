@@ -275,6 +275,71 @@
       "expectedSymbols": [],
       "changed": [],
       "why": "needle: zero-shared-term paraphrase on flask sessions"
+    },
+    {
+      "id": "real-express-file-index",
+      "repo": "express",
+      "query": "where is the index.js entry file",
+      "type": "file",
+      "topK": 3,
+      "expectedFiles": [
+        "index.js"
+      ],
+      "expectedSymbols": [],
+      "changed": [],
+      "why": "file-only: package entry point with no parseable symbols"
+    },
+    {
+      "id": "real-express-file-license",
+      "repo": "express",
+      "query": "the MIT license terms for the project",
+      "type": "file",
+      "topK": 3,
+      "expectedFiles": [
+        "LICENSE"
+      ],
+      "expectedSymbols": [],
+      "changed": [],
+      "why": "file-only: symbol-less LICENSE file"
+    },
+    {
+      "id": "real-mux-file-makefile",
+      "repo": "mux",
+      "query": "the Makefile build and lint targets",
+      "type": "file",
+      "topK": 3,
+      "expectedFiles": [
+        "Makefile"
+      ],
+      "expectedSymbols": [],
+      "changed": [],
+      "why": "file-only: symbol-less build manifest"
+    },
+    {
+      "id": "real-mux-file-gomod",
+      "repo": "mux",
+      "query": "the go.mod module declaration",
+      "type": "file",
+      "topK": 3,
+      "expectedFiles": [
+        "go.mod"
+      ],
+      "expectedSymbols": [],
+      "changed": [],
+      "why": "file-only: symbol-less module manifest"
+    },
+    {
+      "id": "real-flask-file-schema",
+      "repo": "flask",
+      "query": "the schema.sql database schema",
+      "type": "file",
+      "topK": 3,
+      "expectedFiles": [
+        "examples/tutorial/flaskr/schema.sql"
+      ],
+      "expectedSymbols": [],
+      "changed": [],
+      "why": "file-only: symbol-less SQL schema"
     }
   ]
 }

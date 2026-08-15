@@ -1,6 +1,6 @@
 import path from "node:path";
 import { build } from "./build";
-import { rankSymbols, explicitFilesFromTask, queryConfidence } from "./query";
+import { rankSymbols, explicitFilesFromTask, queryConfidence, fuseFileHits } from "./query";
 import { assemble, type Capsule } from "./assemble";
 import { renderCapsule, capsuleToJson } from "./render";
 import { resolveExpand, renderExpanded } from "./expand";
@@ -87,6 +87,10 @@ async function cmdPrepare(args: Args) {
   const historyIntent = /\b(why did|when did|history|regression|introduced(?: by)?|co-?changed)\b/i.test(task);
   const coChanged = historyIntent ? await coChangedFiles(b.root) : undefined;
   let hits = rankSymbols({ task, graph: b.graph, changed, explicitFiles: explicit, bm25, docs: b.docs, coChanged });
+  // file-only lane: symbol-less files (Makefile, LICENSE, entry points) surface
+  // as file-level hits; symbol answers stay authoritative, the lane only fills
+  // the gap a file query hits when no symbol matches
+  hits = fuseFileHits(hits, task, b.graph, b.files, b.docs);
 
   // session-delta: symbols already shown to the agent in this task session are
   // down-weighted (novelty); the disposable session state is keyed by tree
@@ -245,6 +249,7 @@ async function cmdInit(args: Args, rest: string[]) {
   let force = false;
   let dryRun = false;
   let noHooks = false;
+  let noInstructions = false;
   let create = false;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
@@ -252,6 +257,7 @@ async function cmdInit(args: Args, rest: string[]) {
     else if (a === "--force") force = true;
     else if (a === "--dry-run") dryRun = true;
     else if (a === "--no-hooks") noHooks = true;
+    else if (a === "--no-instructions") noInstructions = true;
     else if (a === "--create") create = true;
     else if (a === "--targets") targets = rest[++i] ?? "all";
     else if (a.startsWith("--targets=")) targets = a.slice(10);
@@ -265,8 +271,8 @@ async function cmdInit(args: Args, rest: string[]) {
     process.exit(1);
   }
   const repo = project ? (await (await import("./scan")).findRoot(args.root)) ?? args.root : "";
-  console.log(`context init (targets: ${targets}, ${project ? "project" : "user"} scope${hooks ? ", hooks" : ", no hooks (--no-hooks)"})`);
-  for (const r of await init({ project, repo, force, dryRun, only, hooks, create })) {
+  console.log(`context init (targets: ${targets}, ${project ? "project" : "user"} scope${hooks ? ", hooks" : ", no hooks (--no-hooks)"}${noInstructions ? ", no instructions (--no-instructions)" : ""})`);
+  for (const r of await init({ project, repo, force, dryRun, only, hooks, instructions: !noInstructions, create })) {
     const note = r.note ? ` ${r.note}` : "";
     const loc = r.status === "unselected" ? "" : r.dir;
     console.log(`  ${r.agent.padEnd(11)}  ${r.what.padEnd(12)}  ${r.status.padEnd(10)}  ${loc}${note}`);

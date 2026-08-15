@@ -43,7 +43,7 @@ export const SCOPE_UNDER = /\bunder\s+([a-zA-Z0-9_./-]+)/i;
 // low-confidence and semantic results lead — UNLESS an authoritative low-score
 // signal (recent-change, explicit-file) already pinned the answer.
 export const WEAK_BASE_SCORE = 5;
-export const AUTHORITATIVE_REASONS = ["explicit-file", "recent-change"];
+export const AUTHORITATIVE_REASONS = ["explicit-file", "recent-change", "basename-match"];
 
 // generic test framework scaffolding: evidence, not targets
 export const GENERIC_TEST = new Set(["it", "test", "describe", "expect", "beforeeach", "aftereach", "beforeall", "afterall"]);

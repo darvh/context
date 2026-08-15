@@ -105,4 +105,46 @@ describe("context init", () => {
     expect(oc.find((x) => x.what === "hooks-config")?.status).toBe("installed");
     await fs.rm(repo, { recursive: true, force: true });
   });
+
+  test("instructions: AGENTS.md line for hook-less hosts, idempotent, claude/codex skipped", async () => {
+    const repo = path.join(import.meta.dir, "..", "var", "init-inst-" + Date.now());
+    await fs.mkdir(repo, { recursive: true });
+    const r = await init({ project: true, repo, force: false, dryRun: false, only: ["opencode", "pi", "claude-code"], hooks: false });
+    const inst = r.filter((x) => x.what === "instructions");
+    expect(inst.map((x) => x.agent).sort()).toEqual(["opencode", "pi"]);
+    // shared repo AGENTS.md: first agent created it, the next wrote the same block
+    expect(inst.map((x) => x.status).sort()).toEqual(["created", "unchanged"]);
+    const agentsMd = await fs.readFile(path.join(repo, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("<!-- context:start -->");
+    expect(agentsMd).toContain("context observe");
+    expect(agentsMd).toContain("<!-- context:end -->");
+    // claude-code never touches CLAUDE.md
+    await expect(fs.access(path.join(repo, ".claude", "CLAUDE.md"))).rejects.toThrow();
+    // idempotent: rerun reports unchanged, no duplicate block
+    const r2 = await init({ project: true, repo, force: false, dryRun: false, only: ["opencode", "pi"], hooks: false });
+    expect(r2.filter((x) => x.what === "instructions").every((x) => x.status === "unchanged")).toBe(true);
+    const again = await fs.readFile(path.join(repo, "AGENTS.md"), "utf8");
+    expect(again.match(/context:start/g)?.length).toBe(1);
+    // foreign content preserved, block replaced in place when the line drifts
+    await fs.writeFile(path.join(repo, "AGENTS.md"), "my rules\n" + agentsMd.replace("context observe", "context map") + "tail\n");
+    const r3 = await init({ project: true, repo, force: false, dryRun: false, only: ["opencode"], hooks: false });
+    expect(r3.find((x) => x.what === "instructions")?.status).toBe("updated");
+    const final = await fs.readFile(path.join(repo, "AGENTS.md"), "utf8");
+    expect(final.startsWith("my rules\n")).toBe(true);
+    expect(final.endsWith("tail\n")).toBe(true);
+    expect(final).toContain("context observe");
+    await fs.rm(repo, { recursive: true, force: true });
+  });
+
+  test("instructions: --no-instructions opt-out and dry-run", async () => {
+    const repo = path.join(import.meta.dir, "..", "var", "init-inst-" + Date.now());
+    await fs.mkdir(repo, { recursive: true });
+    const r = await init({ project: true, repo, force: false, dryRun: true, only: ["opencode"], hooks: false });
+    expect(r.find((x) => x.what === "instructions")?.status).toBe("created");
+    expect(r.find((x) => x.what === "instructions")?.note).toBe("dry-run");
+    await expect(fs.access(path.join(repo, "AGENTS.md"))).rejects.toThrow();
+    const off = await init({ project: true, repo, force: false, dryRun: false, only: ["opencode"], hooks: false, instructions: false });
+    expect(off.find((x) => x.what === "instructions")).toBeUndefined();
+    await fs.rm(repo, { recursive: true, force: true });
+  });
 });

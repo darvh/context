@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { rankSymbols, appendSemanticHits, explicitFilesFromTask, queryConfidence } from "../src/query";
+import { rankSymbols, appendSemanticHits, explicitFilesFromTask, queryConfidence, rankFiles, fuseFileHits } from "../src/query";
 import { buildBm25Index } from "../src/bm25";
 import { repoKey } from "../src/cache";
 import { semanticEnabled, semanticSearch } from "../src/semantic";
@@ -104,6 +104,9 @@ async function runVariant(name: string, tasks: Task[], builds: Map<string, RepoB
       bm25: idx2,
       docs: b2.docs,
     });
+    // file-only lane fuses into the shipped pipeline: a file the query names
+    // by basename (Makefile, LICENSE, schema.sql) surfaces as a file-level hit
+    hits = fuseFileHits(hits, t.query, b2.graph, b2.files, b2.docs);
     let semanticDirs: { path: string; sim: number }[] | undefined;
     if (semantic && queryConfidence(hits) !== "strong") {
       const sem = await semanticSearch(b2.root, b2.graph, b2.docs, t.query, { repoKey: repoKey(b2.root) });
@@ -159,6 +162,49 @@ async function runVariant(name: string, tasks: Task[], builds: Map<string, RepoB
   }
 
   return { name, tasks: results, cold, warm, indexBytes, cacheHits, parsed };
+}
+
+/** File-only retrieval lane: ranks FILES (path + basename + aggregated symbol
+ *  terms), not symbols. Ships answers the symbol lane cannot see — configs,
+ *  Makefiles, LICENSE, schema.sql, entry points with no parseable symbols.
+ *  Measured on recallFiles alone: the answer to a file query IS the file. */
+async function runFileVariant(tasks: Task[], builds: Map<string, RepoBuild>): Promise<VariantResult> {
+  const results: TaskResult[] = [];
+  const cold: number[] = [];
+  const warm: number[] = [];
+  for (const t of tasks) {
+    const rb = builds.get(t.repo)!;
+    const b2 = rb.warm;
+    cold.push(rb.coldMs);
+    warm.push(rb.warmMs);
+    const ranked = rankFiles(t.query, b2.graph, b2.files, b2.docs);
+    const topK = ranked.slice(0, t.topK);
+    const topFiles = topK.map((f) => f.file);
+    const hitFiles = t.expectedFiles.filter((f) => topFiles.includes(f));
+    const rr = t.expectedFiles.reduce((best, f) => {
+      const rank = topFiles.indexOf(f);
+      return rank >= 0 && (best === 0 || rank < best) ? rank + 1 : best;
+    }, 0);
+    const firstExpected = t.expectedFiles.find((f) => topFiles.includes(f));
+    results.push({
+      id: t.id,
+      type: t.type,
+      repo: t.repo,
+      query: t.query,
+      why: t.why,
+      expectedFiles: t.expectedFiles,
+      recallFiles: t.expectedFiles.length ? hitFiles.length / t.expectedFiles.length : 1,
+      recallSymbols: 1,
+      mrr: rr ? 1 / rr : 0,
+      topFiles,
+      evidenceRecall: 1,
+      unrelatedItems: 0,
+      stepsToEvidence: firstExpected ? topFiles.indexOf(firstExpected) + 1 : Infinity,
+      outputTokens: 0,
+      budgetViolation: false,
+    });
+  }
+  return { name: "files (file-only)", tasks: results, cold, warm, indexBytes: 0, cacheHits: 0, parsed: 0 };
 }
 
 function summarize(v: VariantResult) {
@@ -245,6 +291,23 @@ if (useSemantic) {
   summarize(sem);
 }
 perTask(variants);
+
+// file-only lane: a separate retrieval for symbol-less answers, measured on
+// file recall alone (the answer to a file query IS the file). Reported
+// separately, not in the per-task variant comparison — it is a different
+// retrieval mode, not a variant of the symbol lane.
+const fileTasks = allTasks.filter((t) => t.type === "file");
+if (fileTasks.length) {
+  const fv = await runFileVariant(fileTasks, builds);
+  const n = fv.tasks.length;
+  const hits = fv.tasks.filter((t) => t.recallFiles > 0).length;
+  const mean = (f: (t: TaskResult) => number) => fv.tasks.reduce((s, t) => s + f(t), 0) / n;
+  console.log(`\n[${fv.name}]`);
+  console.log(`  recall@k files:   ${(mean((t) => t.recallFiles) * 100).toFixed(1)}%  (tasks with the expected file in top-k: ${hits}/${n})`);
+  for (const t of fv.tasks) {
+    console.log(`    ${t.id.padEnd(24)} ${(t.recallFiles > 0 ? "hit" : "MISS").padStart(4)} rank ${t.stepsToEvidence === Infinity ? "-" : t.stepsToEvidence} "${t.query}" -> ${t.expectedFiles.join(",")}`);
+  }
+}
 
 if (jsonOut) {
   const out = { seed: null as null | number, env: { bun: process.version, date: new Date().toISOString() }, real: useReal, variants: variants.map((v) => ({ name: v.name, tasks: v.tasks, cold: v.cold, warm: v.warm, indexBytes: v.indexBytes, cacheHits: v.cacheHits, parsed: v.parsed })) };

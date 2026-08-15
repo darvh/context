@@ -14,7 +14,8 @@ export type Kind =
   | "test"
   | "config"
   | "entry"
-  | "doc";
+  | "doc"
+  | "file";
 
 export interface Span {
   sl: number; // start line, 1-based
