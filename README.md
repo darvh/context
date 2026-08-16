@@ -4,6 +4,16 @@ Deterministic discovery compiler for coding agents. Turns a task plus the curren
 
 Bun/TypeScript MVP, Tree-sitter for Go / TypeScript / JavaScript / Python (bespoke walkers) plus Java / Ruby / Rust / C / C++ / C# / PHP / Bash (shared generic walker), plain external content-addressed cache, deterministic lexical + graph ranking.
 
+## Core principles
+
+- **Local-first:** exact lookup, filters, and the semantic lane all run on-device — no remote index, no hosted search.
+- **Progressive:** the exact/lexical pass answers first; the embedding lane runs only when lexical evidence is weak, so extra work happens only when it can change the answer.
+- **One result model:** ranked hits backed by provenance, per-hit confidence, and handles that fetch exact spans — one capsule, no separate human/agent results.
+- **Hybrid where it pays:** lexical and graph ranking always; embeddings as an opt-in local lane for weak queries.
+- **Incremental content-addressed cache:** only changed files reparse; schema-versioned snapshots replace atomically.
+- **Evidence over answers:** generation stays outside the search kernel, keeping retrieval fast, inspectable, and model-independent.
+- **Native operations:** search, filter, traverse, compare, and fetch — no UI to scrape.
+
 ## Commands
 
 ```text
