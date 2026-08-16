@@ -19,6 +19,27 @@ async function prepareCapsule(root: string, task: string) {
 }
 
 describe("expand", () => {
+  test("HTML is a document while structured metadata stays readable but unranked", async () => {
+    const root = path.join(import.meta.dir, "..", "var", "doc-types-" + Date.now());
+    await fs.mkdir(root, { recursive: true });
+    await fs.writeFile(path.join(root, "page.html"), "<html><body><nav><a href='/guide'>Guide</a></nav><h1>Search guide</h1><p>Useful <a href='/docs'>page text</a> &amp; links. <a href='javascript:alert(1)'>unsafe</a> &#x110000;</p><pre><code>const x = 1;</code></pre><script>ignore me</script></body></html>");
+    await fs.writeFile(path.join(root, "memory.json"), '{"search":"machine state"}');
+    await fs.writeFile(path.join(root, "site.xml"), "<urlset><url><loc>https://example.com</loc></url></urlset>");
+
+    const b = await build(root);
+    expect(b.docs.map((d) => d.file)).toEqual(["page.html"]);
+    expect(b.docs[0].text).toContain("# Search guide");
+    expect(b.docs[0].text).toContain("[page text](/docs)");
+    expect(b.docs[0].text).toContain("[Guide](/guide)");
+    expect(b.docs[0].text).toContain("```\nconst x = 1;\n```");
+    expect(b.docs[0].text).toContain("&#x110000;");
+    expect(b.docs[0].text).toContain("unsafe");
+    expect(b.docs[0].text).not.toContain("javascript:");
+    expect(b.docs[0].text).not.toContain("ignore me");
+
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
   test("returns raw source span for a handle", async () => {
     const capsule = await prepareCapsule(GO, "session persistence");
     const hit = capsule.hits.find((h) => h.name === "OpenStore")!;

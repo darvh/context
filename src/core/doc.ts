@@ -7,9 +7,9 @@ import { createHash } from "node:crypto";
  * their text feeds the BM25 + semantic indexes so `context observe` can
  * surface them. Fail-open: any extraction error yields empty text.
  *
- * Extraction: @firecrawl/anydoc (Rust core, local, no LLM) for office/PDF
- * formats; plain text read for markup/data formats. Format detection is
- * content-based in anydoc, so mislabeled files still convert.
+ * Extraction: a small local HTML normalizer, @firecrawl/anydoc (Rust core,
+ * local, no LLM) for office/PDF formats, and direct reads for plain prose.
+ * Structured data files stay outside this lane.
  *
  * Long documents are split into BOUNDED sections (headings / paragraph runs)
  * instead of one truncated record: a 25KB RST file as one record buries the
@@ -37,8 +37,10 @@ export interface DocFact {
   mtimeMs: number;
 }
 
-// read directly (already text) — cheap, no converter needed
-const TEXT_EXTS = new Set([
+// Prose/markup documents — cheap, no converter needed.
+// Structured files stay readable via `context read`, but are not added to the
+// prose docs lane: their keys/values belong to artifact/config retrieval.
+const PROSE_TEXT_EXTS = new Set([
   ".md",
   ".markdown",
   ".rst",
@@ -46,13 +48,6 @@ const TEXT_EXTS = new Set([
   ".txt",
   ".html",
   ".htm",
-  ".json",
-  ".yaml",
-  ".yml",
-  ".toml",
-  ".ini",
-  ".csv",
-  ".xml",
   ".log",
 ]);
 
@@ -89,11 +84,54 @@ export function isDocFile(path: string): boolean {
   const i = path.lastIndexOf(".");
   if (i < 0) return false;
   const ext = path.slice(i).toLowerCase();
-  return TEXT_EXTS.has(ext) || ANYDOC_EXTS.has(ext);
+  return PROSE_TEXT_EXTS.has(ext) || ANYDOC_EXTS.has(ext);
 }
 
 function cleanText(raw: string): string {
   return raw.replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function decodeHtml(raw: string): string {
+  const named: Record<string, string> = { amp: "&", apos: "'", gt: ">", lt: "<", nbsp: " ", quot: '"' };
+  const point = (value: string, radix: number, original: string) => {
+    const code = Number.parseInt(value, radix);
+    return Number.isInteger(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : original;
+  };
+  return raw
+    .replace(/&#x([0-9a-f]+);/gi, (full, hex) => point(hex, 16, full))
+    .replace(/&#(\d+);/g, (full, dec) => point(dec, 10, full))
+    .replace(/&([a-z]+);/gi, (full, name) => named[name.toLowerCase()] ?? full);
+}
+
+function stripTags(raw: string): string {
+  return raw.replace(/<[^>]+>/g, "");
+}
+
+function safeHref(raw: string): string {
+  const href = decodeHtml(raw).trim();
+  return /^(?:javascript|data|vbscript):/i.test(href) ? "" : href;
+}
+
+/** Bounded converter for saved HTML; fetching and DOM execution happen elsewhere. */
+function htmlToMarkdown(raw: string): string {
+  let text = raw
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(script|style|noscript|template|svg|canvas|iframe)[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_, code) => `\n\n\`\`\`\n${decodeHtml(stripTags(code)).trim()}\n\`\`\`\n\n`)
+    .replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href, label) => {
+      const text = stripTags(label);
+      const safe = safeHref(href);
+      return safe ? `[${text}](${safe})` : text;
+    })
+    .replace(/<img\b[^>]*alt=["']([^"']*)["'][^>]*>/gi, "$1")
+    .replace(/<h([1-6])\b[^>]*>/gi, (_, level) => `\n\n${"#".repeat(Number(level))} `)
+    .replace(/<\/h[1-6]>/gi, "\n\n")
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<li\b[^>]*>/gi, "\n- ")
+    .replace(/<\/(li|p|div|section|article|main|header|footer|blockquote|tr|table|ul|ol|td|th)>/gi, "\n")
+    .replace(/<(p|div|section|article|main|header|footer|blockquote|tr|table|ul|ol)\b[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, "");
+  return cleanText(decodeHtml(text));
 }
 
 /**
@@ -131,7 +169,10 @@ function splitSections(text: string): DocSection[] {
 async function extractDocText(file: string, bytes: Uint8Array): Promise<string> {
   const i = file.lastIndexOf(".");
   const ext = i >= 0 ? file.slice(i).toLowerCase() : "";
-  if (TEXT_EXTS.has(ext)) return cleanText(new TextDecoder().decode(bytes));
+  if (PROSE_TEXT_EXTS.has(ext)) {
+    const text = new TextDecoder().decode(bytes);
+    return ext === ".html" || ext === ".htm" ? htmlToMarkdown(text) : cleanText(text);
+  }
   if (ANYDOC_EXTS.has(ext)) {
     try {
       return cleanText(await toMarkdownBytes(bytes));
