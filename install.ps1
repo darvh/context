@@ -54,11 +54,22 @@ ENVIRONMENT:
 }
 
 for ($i = 0; $i -lt $args.Count; $i++) {
-  # accept -Force, --force, -NoForce, and --no-force alike: strip leading
-  # dashes and internal separators, then compare case-insensitively
-  $flag = (($args[$i] -replace "^[-]+", "") -replace "[-_]", "").ToLower()
-  if ($flag -like "targets=*") { $targets = $flag.Substring(8); continue }
-  if ($flag -like "version=*") { $version = $flag.Substring(8); continue }
+  # accept -Force, --force, -NoForce, and --no-force alike. Strip leading
+  # dashes and normalize separators in the FLAG NAME only, so a value such as
+  # `-Targets=claude-code` keeps its hyphen.
+  $raw = $args[$i] -replace "^[-]+", ""
+  $eq = $raw.IndexOf("=")
+  if ($eq -ge 0) {
+    $name = ($raw.Substring(0, $eq) -replace "[-_]", "").ToLower()
+    $value = $raw.Substring($eq + 1)
+    switch ($name) {
+      "targets" { $targets = $value }
+      "version" { $version = $value }
+      default { throw "context: unknown option: $($args[$i])" }
+    }
+    continue
+  }
+  $flag = ($raw -replace "[-_]", "").ToLower()
   switch ($flag) {
     "local" { $mode = "local" }
     "targets" { $targets = $args[++$i] }

@@ -28,6 +28,13 @@ jobs:
       - name: Run tests
         run: bun test
 
+      - name: PowerShell syntax
+        run: |
+          set -euo pipefail
+          out="$(pwsh -NoProfile -File install.ps1 -Help)"
+          grep -q "USAGE:" <<<"$out"
+          pwsh -NoProfile -File install.ps1 -Targets=claude-code -DryRun >/dev/null
+
       - name: Build standalone binary
         run: bun run build
 
