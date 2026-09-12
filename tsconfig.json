@@ -9,9 +9,9 @@
     "noEmit": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "paths": { "onnxruntime-node": ["./vendor/onnxruntime-node/index.js"] }
   },
-  "paths": { "onnxruntime-node": ["./vendor/onnxruntime-node/index.js"] },
   "include": ["src", "spike/src", "tests", "scripts"],
   "exclude": ["spike/fixtures", "tests/fixtures", "var", "node_modules", "spike/grammars"]
 }

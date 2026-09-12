@@ -80,9 +80,11 @@ Push a semantic version tag such as `v0.1.0`, or run the Release workflow from `
 - Windows x64
 
 Each ZIP contains the standalone `context` binary (grammars and skill embedded),
-the source tree for the Bun fallback, and a `.sha256` checksum file. The
-onnxruntime shared library is bundled only for Linux x64 (the release build
-host); elsewhere the semantic lane degrades to the lexical/graph result.
+the source tree for the Bun fallback, the per-target onnxruntime runtime library
+beside the binary, and a `.sha256` checksum file. macOS assets are ad-hoc signed
+during the build so dyld accepts them; Linux, Windows x64, and macOS arm64 ship
+a working semantic lane, while macOS x64 does not (onnxruntime dropped Intel Mac
+binaries in 1.24, so it degrades to the lexical/graph result).
 
 ## Development
 

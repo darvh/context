@@ -25,7 +25,7 @@ $modifyPath = $true
 $uninstall = $false
 
 function Show-Usage {
-  @"
+  @'
 context install.ps1
 
 Installs the `context` command and its agent skill on Windows.
@@ -50,11 +50,13 @@ ENVIRONMENT:
     CONTEXT_BIN_DIR         Launcher dir (default: ~\.local\bin)
     CONTEXT_NO_MODIFY_PATH  Set to 1 to skip PATH setup
     CONTEXT_VERSION         Release tag, same as -Version
-"@
+'@
 }
 
 for ($i = 0; $i -lt $args.Count; $i++) {
-  $flag = ($args[$i] -replace "^[-]+", "").ToLower()
+  # accept -Force, --force, -NoForce, and --no-force alike: strip leading
+  # dashes and internal separators, then compare case-insensitively
+  $flag = (($args[$i] -replace "^[-]+", "") -replace "[-_]", "").ToLower()
   if ($flag -like "targets=*") { $targets = $flag.Substring(8); continue }
   if ($flag -like "version=*") { $version = $flag.Substring(8); continue }
   switch ($flag) {
@@ -62,12 +64,12 @@ for ($i = 0; $i -lt $args.Count; $i++) {
     "targets" { $targets = $args[++$i] }
     "version" { $version = $args[++$i] }
     "force" { $force = $true }
-    "no-force" { $force = $false }
-    "dry-run" { $dryRun = $true }
+    "noforce" { $force = $false }
+    "dryrun" { $dryRun = $true }
     "hooks" { $hooks = $true }
-    "no-hooks" { $hooks = $false }
-    "from-source" { $fromSource = $true }
-    "no-modify-path" { $modifyPath = $false }
+    "nohooks" { $hooks = $false }
+    "fromsource" { $fromSource = $true }
+    "nomodifypath" { $modifyPath = $false }
     "uninstall" { $uninstall = $true }
     "h" { Show-Usage; exit 0 }
     "help" { Show-Usage; exit 0 }

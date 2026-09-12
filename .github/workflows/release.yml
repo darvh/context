@@ -15,36 +15,52 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Linux/Windows targets cross-compile on the always-available Ubuntu
+    # runner; darwin targets run on macOS because the embedded onnxruntime
+    # addon needs install_name_tool (@executable_path) and the binary must be
+    # ad-hoc signed or dyld SIGKILLs it.
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: bun-linux-x64
+          - os: ubuntu-latest
+            target: bun-linux-x64
             asset: linux-x64
             extension: ""
-            runtime_lib: true
-          - target: bun-linux-arm64
+            vendor_platform: linux
+            vendor_arch: x64
+          - os: ubuntu-latest
+            target: bun-linux-arm64
             asset: linux-arm64
             extension: ""
-            runtime_lib: false
-          - target: bun-darwin-x64
-            asset: darwin-x64
-            extension: ""
-            runtime_lib: false
-          - target: bun-darwin-arm64
-            asset: darwin-arm64
-            extension: ""
-            runtime_lib: false
-          - target: bun-windows-x64
+            vendor_platform: linux
+            vendor_arch: arm64
+          - os: ubuntu-latest
+            target: bun-windows-x64
             asset: windows-x64
             extension: .exe
-            runtime_lib: false
+            vendor_platform: win32
+            vendor_arch: x64
+          - os: macos-14
+            target: bun-darwin-arm64
+            asset: darwin-arm64
+            extension: ""
+            vendor_platform: darwin
+            vendor_arch: arm64
+          - os: macos-14
+            target: bun-darwin-x64
+            asset: darwin-x64
+            extension: ""
+            vendor_platform: darwin
+            vendor_arch: x64
+    runs-on: ${{ matrix.os }}
     env:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
       TARGET: ${{ matrix.target }}
       ASSET: ${{ matrix.asset }}
       EXTENSION: ${{ matrix.extension }}
+      VENDOR_PLATFORM: ${{ matrix.vendor_platform }}
+      VENDOR_ARCH: ${{ matrix.vendor_arch }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -61,36 +77,24 @@ jobs:
         run: bun test
 
       - name: Embed grammar assets
-        run: bun run scripts/embed-grammars.ts
+        run: bun run scripts/build/embed-grammars.ts
 
-      - name: Package grammar assets
-        run: bun run scripts/package.ts
+      - name: Vendor onnxruntime for the target
+        run: bun run scripts/build/vendor-onnx.ts --platform "$VENDOR_PLATFORM" --arch "$VENDOR_ARCH"
+
+      - name: Stage runtime libraries
+        run: bun run scripts/build/package.ts
 
       - name: Build target binary
         run: |
           mkdir -p "release/context/dist"
-          # grammars + skill are embedded so the release asset is one
-          # self-contained binary (matching `bun run build`); the runtime does
-          # not look for a sibling grammars/ directory from a standalone build.
+          # grammars + skill are embedded, so the ZIP is a self-contained
+          # binary (matching `bun run build`); a standalone build resolves them
+          # from bunfs, not a sibling directory.
           bun build --compile --target="$TARGET" --asset ./grammars --asset ./skills src/cli.ts --outfile "release/context/dist/context$EXTENSION"
-          # the onnxruntime shared library cannot be embedded and must sit
-          # beside the binary (dyld/ld.so @executable_path lookup). It is
-          # host-specific, so only ship it where the build host matches the
-          # target (linux-x64 today); elsewhere the semantic lane degrades.
-          if [ "${{ matrix.runtime_lib }}" = "true" ]; then
-            cp dist/libonnxruntime* release/context/dist/ 2>/dev/null || true
-          fi
-          # source is shipped too so the installed launcher can fall back to
-          # `bun run src/cli.ts` when the host cannot execute compiled binaries
-          cp -R src release/context/src
-          cp -R scripts release/context/scripts
-          cp -R skills/context release/context/skill
-          cp package.json bun.lock release/context/
 
-      - name: Create ZIP and checksum
-        run: |
-          (cd release && zip -rq "../context-${RELEASE_TAG}-${ASSET}.zip" context)
-          sha256sum "context-${RELEASE_TAG}-${ASSET}.zip" > "context-${RELEASE_TAG}-${ASSET}.zip.sha256"
+      - name: Package, sign (macOS), and checksum
+        run: bun run scripts/build/package-release.ts --tag "$RELEASE_TAG" --asset "$ASSET" --ext "$EXTENSION"
 
       - name: Upload release assets
         uses: actions/upload-artifact@v4
