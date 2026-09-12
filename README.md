@@ -45,7 +45,17 @@ context --version   prints version, build commit, cache schema, runtime kind
 curl -fsSL https://raw.githubusercontent.com/darvh/context/main/install.sh | bash
 ```
 
-The installer selects the matching release ZIP for the current OS and architecture. If no release is available, it falls back to a source install and requires Bun. Useful flags: `--local`, `--targets <agents>`, `--version <tag>`, `--force`, and `--dry-run`. Add `--hooks` to force the source path and wire the Claude Code adapters.
+The installer is binary-first: it selects the matching release ZIP for the
+current OS and architecture, verifies its published SHA-256, unpacks to
+`~/.local/share/context` (honoring `XDG_DATA_HOME` and `CONTEXT_HOME`), and
+writes a launcher to `~/.local/bin` (adds it to your shell `PATH`; opt out with
+`--no-modify-path`). If no release is available — or with `--from-source` — it
+falls back to a source install and requires Bun. Hooks are self-hosted by the
+compiled binary, so `--hooks` (on by default) no longer forces a source build;
+`--no-hooks` opts out. Useful flags: `--local`, `--targets <agents>`,
+`--version <tag>`, `--force`/`--no-force`, `--dry-run`, `--uninstall`, and
+`--help`. The skill follows the `skills/<name>/SKILL.md` convention, so it is
+discoverable by `gh skill install darvh/context`.
 
 ### From a checkout
 
@@ -59,7 +69,7 @@ Forward installer options after `--`, for example:
 bun run install:local -- --targets pi --force
 ```
 
-`context init` installs the host-neutral skill into each agent's skill directory (same matrix as proof: opencode, claude-code, codex, cursor, copilot, antigravity, pi), user or project scope. Idempotent: identical copies are `up-to-date`, conflicts are skipped unless `--force`. Manual init reports absent home-scope agent dirs as `agent-miss` and never creates silently; the installer probes each agent's config dir / PATH binary and only targets agents that are actually installed. `--hooks` additionally wires the UserPromptSubmit + agent-response hook adapters (claude-code settings today) — explicit opt-in, never silent. The one-line steering instruction installs into each hook-less host's instructions file: home scope only where the host natively reads a global file (opencode's `~/.config/opencode/AGENTS.md`, seeded from `~/.claude/CLAUDE.md` when created so existing instructions are never shadowed), project scope as the shared repo-root `AGENTS.md` (one marker block).
+`context init` installs the host-neutral skill into each agent's skill directory (same matrix as proof: opencode, claude-code, codex, cursor, copilot, antigravity, pi), user or project scope. Idempotent: identical copies are `up-to-date`, conflicts are skipped unless `--force`. Manual init reports absent home-scope agent dirs as `agent-miss` and never creates silently; the installer probes each agent's config dir / PATH binary and only targets agents that are actually installed. `--hooks` is the default and wires the UserPromptSubmit / SessionStart / PostToolUse adapters; `--no-hooks` opts out. The compiled binary self-hosts those adapters, so hook wiring needs neither Bun nor a scripts/ directory. The one-line steering instruction installs into each hook-less host's instructions file: home scope only where the host natively reads a global file (opencode's `~/.config/opencode/AGENTS.md`, seeded from `~/.claude/CLAUDE.md` when created so existing instructions are never shadowed), project scope as the shared repo-root `AGENTS.md` (one marker block).
 
 ## Releases
 
@@ -69,7 +79,10 @@ Push a semantic version tag such as `v0.1.0`, or run the Release workflow from `
 - macOS x64 and arm64
 - Windows x64
 
-Each ZIP contains the standalone `context` binary and its `grammars/` directory, plus a `.sha256` checksum file.
+Each ZIP contains the standalone `context` binary (grammars and skill embedded),
+the source tree for the Bun fallback, and a `.sha256` checksum file. The
+onnxruntime shared library is bundled only for Linux x64 (the release build
+host); elsewhere the semantic lane degrades to the lexical/graph result.
 
 ## Development
 
@@ -135,7 +148,7 @@ Cache lives in `$XDG_CACHE_HOME/context` (default `~/.cache/context`). Every cac
 
 Git is optional: without a git binary every lane fails open (no changed context, `git_head` omitted, co-change dormant) and retrieval is unaffected.
 
-The installed command self-tests the compiled binary and falls back to the Bun source entrypoint when the host cannot execute compiled binaries (wrong arch, missing loader). See `scripts/mk-launcher.sh`.
+The installed command self-tests the compiled binary and falls back to the Bun source entrypoint when the host cannot execute compiled binaries (wrong arch, missing loader). See `scripts/build/mk-launcher.sh`.
 
 ## Invariants
 
@@ -176,7 +189,7 @@ There is no Stop/agent hook: Claude Code does not render Stop output, and the se
 
 Savings projection (`src/out/savings.ts`) estimates the input tokens the capsule replaces — the whole files its hits point at, capped (≤4 files, ≤4KB each, ≤12KB total) minus capsule tokens, labeled `estimated` everywhere. The runtime decision (Bun over Rust) is recorded in the commit history; the retrieval baseline lives in `eval/`. Retrieval results on pinned real revisions are reproducible via `bun run eval -- real`; agent-task (end-to-end) usefulness measurement is the next step, not yet claimed.
 
-See `skill/SKILL.md` for the host-neutral agent skill.
+See `skills/context/SKILL.md` for the host-neutral agent skill.
 
 ## Acknowledgments
 

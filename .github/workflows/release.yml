@@ -23,18 +23,23 @@ jobs:
           - target: bun-linux-x64
             asset: linux-x64
             extension: ""
+            runtime_lib: true
           - target: bun-linux-arm64
             asset: linux-arm64
             extension: ""
+            runtime_lib: false
           - target: bun-darwin-x64
             asset: darwin-x64
             extension: ""
+            runtime_lib: false
           - target: bun-darwin-arm64
             asset: darwin-arm64
             extension: ""
+            runtime_lib: false
           - target: bun-windows-x64
             asset: windows-x64
             extension: .exe
+            runtime_lib: false
     env:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
       TARGET: ${{ matrix.target }}
@@ -64,13 +69,22 @@ jobs:
       - name: Build target binary
         run: |
           mkdir -p "release/context/dist"
-          bun build --compile --target="$TARGET" src/cli.ts --outfile "release/context/dist/context$EXTENSION"
-          cp -R dist/grammars release/context/dist/grammars
-          cp -R skill release/context/skill
+          # grammars + skill are embedded so the release asset is one
+          # self-contained binary (matching `bun run build`); the runtime does
+          # not look for a sibling grammars/ directory from a standalone build.
+          bun build --compile --target="$TARGET" --asset ./grammars --asset ./skills src/cli.ts --outfile "release/context/dist/context$EXTENSION"
+          # the onnxruntime shared library cannot be embedded and must sit
+          # beside the binary (dyld/ld.so @executable_path lookup). It is
+          # host-specific, so only ship it where the build host matches the
+          # target (linux-x64 today); elsewhere the semantic lane degrades.
+          if [ "${{ matrix.runtime_lib }}" = "true" ]; then
+            cp dist/libonnxruntime* release/context/dist/ 2>/dev/null || true
+          fi
           # source is shipped too so the installed launcher can fall back to
           # `bun run src/cli.ts` when the host cannot execute compiled binaries
           cp -R src release/context/src
           cp -R scripts release/context/scripts
+          cp -R skills/context release/context/skill
           cp package.json bun.lock release/context/
 
       - name: Create ZIP and checksum

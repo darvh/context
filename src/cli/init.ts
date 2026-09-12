@@ -15,7 +15,7 @@ const TARGETS = [
   { name: "claude-code", home: "~/.claude/skills", project: ".claude/skills", probe: [".claude"], bin: "claude" },
   { name: "codex", home: "~/.codex/skills", project: ".codex/skills", probe: [".codex"], bin: "codex" },
   { name: "cursor", home: "~/.cursor/skills", project: ".cursor/skills", probe: [".cursor"], bin: "cursor" },
-  { name: "copilot", home: "~/.agents/skills", project: ".agents/skills", probe: [".config/github-copilot", ".vscode"], bin: "copilot" },
+  { name: "copilot", home: "~/.copilot/skills", project: ".agents/skills", probe: [".config/github-copilot", ".vscode"], bin: "copilot" },
   { name: "antigravity", home: "~/.agents/skills", project: ".agents/skills", probe: [".antigravity"], bin: "antigravity" },
   { name: "pi", home: "~/.agents/skills", project: ".agents/skills", probe: [".pi"], bin: "pi" },
 ];
@@ -49,17 +49,19 @@ export interface InitOptions {
   create?: boolean;
 }
 
-// Compiled binaries bundle src/ into $bunfs; skill/ is EMBEDDED via
-// `--asset ./skill` (readable at import.meta.dir/skill). Source runs resolve
-// it from the checkout. First real path wins.
+// Compiled binaries bundle src/ into $bunfs; skills/ is EMBEDDED via
+// `--asset ./skills` (readable at import.meta.dir/skills/context). Source runs
+// resolve it from the checkout. Release archives ship the skill as a sibling
+// `skill/` directory. First real path wins.
 async function skillDir(): Promise<string> {
   const exe = path.dirname(process.execPath);
   const candidates = [
-    path.join(import.meta.dir ?? "", "skill"), // embedded (standalone)
-    path.join(exe, "..", "skill"),
+    path.join(import.meta.dir ?? "", "skills", "context"), // embedded (standalone)
+    path.join(import.meta.dir ?? "", "..", "..", "skills", "context"), // source checkout
+    path.join(exe, "..", "skill"), // release archive (<root>/skill)
     path.join(exe, "skill"),
-    path.join(import.meta.dir ?? "", "..", "..", "skill"),
-    path.join(import.meta.dir ?? "", "..", "skill"),
+    path.join(exe, "..", "skills", "context"),
+    path.join(import.meta.dir ?? "", "..", "skills", "context"),
   ];
   for (const c of candidates) {
     try {

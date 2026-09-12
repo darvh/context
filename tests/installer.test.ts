@@ -19,6 +19,59 @@ describe("install.sh", () => {
     const { code, out } = await run(["bash", INSTALL, "--dry-run"], REPO);
     expect(code).toBe(0);
     expect(out).toContain("context install (scope: global");
+    expect(out).toContain("release asset:");
+    expect(out).not.toContain("source install");
+  });
+
+  test("--help prints usage and exits 0", async () => {
+    const { code, out } = await run(["bash", INSTALL, "--help"], REPO);
+    expect(code).toBe(0);
+    expect(out).toContain("USAGE:");
+    expect(out).toContain("--uninstall");
+    expect(out).toContain("--from-source");
+  });
+
+  test("global dry-run targets XDG paths under HOME", async () => {
+    const home = path.join(tmpdir(), "ctx-home-" + Date.now() + "-" + Math.random().toString(36).slice(2));
+    await fs.mkdir(home, { recursive: true });
+    const { code, out } = await run(["bash", INSTALL, "--dry-run"], REPO, home);
+    expect(code).toBe(0);
+    expect(out).toContain(path.join(home, ".local", "share", "context"));
+    expect(out).toContain(path.join(home, ".local", "bin", "context"));
+    await fs.rm(home, { recursive: true, force: true });
+  });
+
+  test("--from-source dry-run advertises a source install", async () => {
+    const { code, out } = await run(["bash", INSTALL, "--dry-run", "--from-source"], REPO);
+    expect(code).toBe(0);
+    expect(out).toContain("source install");
+    expect(out).not.toContain("release asset:");
+  });
+
+  test("--uninstall --dry-run prints the removal plan and exits 0", async () => {
+    const { code, out } = await run(["bash", INSTALL, "--uninstall", "--dry-run"], REPO);
+    expect(code).toBe(0);
+    expect(out).toContain("context uninstall (scope: global");
+    expect(out).toContain("would remove");
+  });
+
+  test("--uninstall removes the launcher, env script, and rc line", async () => {
+    const home = path.join(tmpdir(), "ctx-home-" + Date.now() + "-" + Math.random().toString(36).slice(2));
+    const bin = path.join(home, ".local", "bin");
+    const envScript = path.join(bin, "context-env.sh");
+    const profile = path.join(home, ".profile");
+    await fs.mkdir(bin, { recursive: true });
+    await fs.writeFile(envScript, "");
+    await fs.writeFile(path.join(bin, "context"), "");
+    await fs.writeFile(profile, `. "${envScript}"\nkeep-me\n`);
+    const { code } = await run(["bash", INSTALL, "--uninstall"], REPO, home);
+    expect(code).toBe(0);
+    expect(existsSync(envScript)).toBe(false);
+    expect(existsSync(path.join(bin, "context"))).toBe(false);
+    const body = await fs.readFile(profile, "utf8");
+    expect(body).not.toContain("context-env.sh");
+    expect(body).toContain("keep-me");
+    await fs.rm(home, { recursive: true, force: true });
   });
 
   test("local dry-run from a project dir prints project scope and exits 0", async () => {

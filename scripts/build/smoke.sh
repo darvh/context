@@ -5,7 +5,7 @@
 # fail-open cache, concurrent writers, init, and the semantic runtime boundary.
 #
 #   bash scripts/build/smoke.sh ./dist/context
-#   bash scripts/smoke.sh "$HOME/.context/bin/context"   # installed launcher
+#   bash scripts/smoke.sh "$HOME/.local/bin/context"   # installed launcher
 set -euo pipefail
 
 cmd="${1:?usage: smoke.sh <context-command>}"

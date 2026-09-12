@@ -16,7 +16,7 @@
     "grammars": "bun run scripts/build/embed-grammars.ts",
     "dup": "npx jscpd src scripts eval",
     "unused": "npx knip",
-    "build": "bun run scripts/build/vendor-onnx.ts && bun run scripts/build/embed-grammars.ts && mkdir -p dist && bun run scripts/build/package.ts && bun build --compile --asset ./grammars --asset ./skill src/cli.ts --outfile dist/context && bash scripts/build/sign.sh dist/context",
+    "build": "bun run scripts/build/vendor-onnx.ts && bun run scripts/build/embed-grammars.ts && mkdir -p dist && bun run scripts/build/package.ts && bun build --compile --asset ./grammars --asset ./skills src/cli.ts --outfile dist/context && bash scripts/build/sign.sh dist/context",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "postinstall": "bun run scripts/build/vendor-onnx.ts"
