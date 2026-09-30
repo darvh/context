@@ -1,5 +1,25 @@
-import { toMarkdownBytes } from "@firecrawl/anydoc";
 import { createHash } from "node:crypto";
+
+/**
+ * Office/PDF conversion is optional: `@firecrawl/anydoc` ships a native module
+ * per platform, and a checkout installed for one platform (or without the
+ * optional binding) must not stop the CLI from starting. Load it on first use
+ * and fail open — the branch below already returns "" on any extraction error.
+ */
+type AnyDocConvert = typeof import("@firecrawl/anydoc").toMarkdownBytes;
+let anydoc: Promise<AnyDocConvert> | undefined;
+
+function loadAnyDoc(): Promise<AnyDocConvert> {
+  if (!anydoc) {
+    anydoc = import("@firecrawl/anydoc")
+      .then((module) => module.toMarkdownBytes)
+      .catch((error) => {
+        anydoc = undefined; // a later call may succeed (e.g. after an install)
+        throw error;
+      });
+  }
+  return anydoc;
+}
 
 /**
  * Docs lane: deterministic, model-free extraction for non-code files.
@@ -175,7 +195,8 @@ async function extractDocText(file: string, bytes: Uint8Array): Promise<string> 
   }
   if (ANYDOC_EXTS.has(ext)) {
     try {
-      return cleanText(await toMarkdownBytes(bytes));
+      const convert = await loadAnyDoc();
+      return cleanText(await convert(bytes));
     } catch {
       return "";
     }
