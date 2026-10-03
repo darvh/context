@@ -3,7 +3,7 @@
 Deterministic discovery compiler for coding agents. Turns a task plus the current working tree into a small, source-backed context capsule — the deterministic core needs no model, no embeddings, and no repo-local state (an opt-in local semantic lane exists for weak queries).
 
 [![CI](https://img.shields.io/github/actions/workflow/status/darvh/context/ci.yml?branch=main&label=CI)](https://github.com/darvh/context/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.1.1-blue)](https://github.com/darvh/context/releases/tag/v0.1.1)
+[![Release](https://img.shields.io/badge/release-v0.1.2-blue)](https://github.com/darvh/context/releases/tag/v0.1.2)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Context is local-first code search and retrieval for AI coding agents: point it at a repository and get a compact, source-backed context capsule — ranked hits with provenance, confidence, and handles that fetch exact spans — instead of a whole-repo dump. It is a Bun/TypeScript CLI built on tree-sitter parsing and deterministic lexical + graph ranking; no hosted index, no API keys, no repository-local state.
