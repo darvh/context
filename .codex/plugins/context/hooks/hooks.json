@@ -1,0 +1,39 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun run /Users/dhivakarsmac/Developer/context/scripts/hooks/hook-session.ts",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun run /Users/dhivakarsmac/Developer/context/scripts/hooks/hook-user.ts",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun run /Users/dhivakarsmac/Developer/context/scripts/hooks/hook-edit.ts",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
