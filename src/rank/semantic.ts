@@ -101,7 +101,11 @@ let warnedUnavailable = false;
 function loadPipeline(): Promise<Pipe | null> {
   if (!pipeP) {
     pipeP = (async () => {
-      const { pipeline } = await import("@huggingface/transformers");
+      const { pipeline, env } = await import("@huggingface/transformers");
+      // Offline/benchmark runs point the model cache at a pre-populated
+      // directory so a run never downloads the model mid-task.
+      const modelCache = process.env.CONTEXT_MODEL_CACHE_DIR;
+      if (modelCache) env.cacheDir = modelCache;
       const p = await pipeline("feature-extraction", await modelName(), { dtype: DTYPE, device: "cpu" });
       return p as Pipe;
     })().catch((error) => {
