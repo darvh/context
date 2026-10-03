@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { promises as fs } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { init } from "../src/cli/init";
 
@@ -63,14 +64,15 @@ describe("context init", () => {
     await fs.rm(repo, { recursive: true, force: true });
   });
 
-  test("hooks: codex hooks.json gets PostToolUse blast radius with apply_patch matcher", async () => {
+  test("hooks: codex installs an Agent Plugins bundle with hooks, skill, and marketplace entry", async () => {
     const repo = path.join(import.meta.dir, "..", "var", "init-codex-" + Date.now());
     await fs.mkdir(repo, { recursive: true });
     const r = await init({ project: true, repo, force: false, dryRun: false, only: ["codex"], hooks: true });
     const cfg = r.find((x) => x.what === "hooks-config");
-    expect(cfg?.status).toBe("created");
-    expect(cfg?.dir).toContain(".codex/hooks.json");
-    const hooks = JSON.parse(await fs.readFile(cfg!.dir, "utf8"));
+    expect(cfg?.status).toBe("installed");
+    expect(cfg?.dir).toContain(".codex/plugins/context");
+    expect(cfg?.note).toContain("codex plugin add context@personal");
+    const hooks = JSON.parse(await fs.readFile(path.join(cfg!.dir, "hooks", "hooks.json"), "utf8"));
     expect(hooks.hooks.SessionStart[0].matcher).toBe("startup|resume|compact");
     expect(hooks.hooks.PostToolUse[0].matcher).toBe("apply_patch|Edit|Write");
     expect(hooks.hooks.PostToolUse[0].hooks[0].command).toContain("hook-edit");
@@ -78,10 +80,19 @@ describe("context init", () => {
     expect(hooks.hooks.Stop).toBeUndefined();
     // codex timeout unit is seconds
     expect(hooks.hooks.PostToolUse[0].hooks[0].timeout).toBe(10);
+    const manifest = JSON.parse(await fs.readFile(path.join(cfg!.dir, "plugin.json"), "utf8"));
+    expect(manifest.name).toBe("context");
+    expect(manifest.extensions["com.openai"].hooks).toBe("./hooks/hooks.json");
+    const skill = await fs.readFile(path.join(cfg!.dir, "skills", "context", "SKILL.md"), "utf8");
+    expect(skill).toContain("context observe");
+    const market = JSON.parse(await fs.readFile(path.join(repo, ".agents", "plugins", "marketplace.json"), "utf8"));
+    expect(market.plugins[0].source.path).toBe("./.codex/plugins/context");
+    // the deprecated direct hooks file must not exist: plugin + user hooks would both run
+    expect(existsSync(path.join(repo, ".codex", "hooks.json"))).toBe(false);
     await fs.rm(repo, { recursive: true, force: true });
   });
 
-  test("hooks: opencode plugin covers compaction + post-edit blast radius", async () => {
+  test("hooks: opencode plugin uses the V2 plugin API for compaction + post-edit blast radius", async () => {
     const repo = path.join(import.meta.dir, "..", "var", "init-oc-" + Date.now());
     await fs.mkdir(repo, { recursive: true });
     const r = await init({ project: true, repo, force: false, dryRun: false, only: ["opencode"], hooks: true });
@@ -89,10 +100,14 @@ describe("context init", () => {
     expect(cfg?.status).toBe("installed");
     expect(cfg?.dir).toContain(".opencode/plugins/context.ts");
     const plugin = await fs.readFile(cfg!.dir, "utf8");
-    expect(plugin).toContain("experimental.session.compacting");
-    expect(plugin).toContain("tool.execute.after");
+    // V1 plugin bodies do not run in V2: the file must use Plugin.define and V2 hooks
+    expect(plugin).toContain('import { Plugin } from "@opencode/plugin"');
+    expect(plugin).toContain("Plugin.define(");
+    expect(plugin).toContain('ctx.session.hook("compaction"');
+    expect(plugin).toContain('ctx.tool.hook("execute.after"');
+    expect(plugin).not.toContain("experimental.session.compacting");
     expect(plugin).toContain("apply_patch");
-    expect(plugin).toContain("hook-edit --text");
+    expect(plugin).toContain("hook-edit");
     await fs.rm(repo, { recursive: true, force: true });
   });
 

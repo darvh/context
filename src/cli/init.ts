@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
 import { execFile } from "node:child_process";
+import pkg from "../../package.json" with { type: "json" };
 
 // Agent compatibility matrix — mirrors proof's rule table. Directories follow
 // each agent's documented skill convention; copilot and antigravity use the
@@ -13,7 +14,7 @@ import { execFile } from "node:child_process";
 const TARGETS = [
   { name: "opencode", home: "~/.config/opencode/skills", project: ".opencode/skills", probe: [".config/opencode"], bin: "opencode" },
   { name: "claude-code", home: "~/.claude/skills", project: ".claude/skills", probe: [".claude"], bin: "claude" },
-  { name: "codex", home: "~/.codex/skills", project: ".codex/skills", probe: [".codex"], bin: "codex" },
+  { name: "codex", home: "~/.agents/skills", project: ".agents/skills", probe: [".codex"], bin: "codex" },
   { name: "cursor", home: "~/.cursor/skills", project: ".cursor/skills", probe: [".cursor"], bin: "cursor" },
   { name: "copilot", home: "~/.copilot/skills", project: ".agents/skills", probe: [".config/github-copilot", ".vscode"], bin: "copilot" },
   { name: "antigravity", home: "~/.agents/skills", project: ".agents/skills", probe: [".antigravity"], bin: "antigravity" },
@@ -297,58 +298,79 @@ async function installHooks(opts: InitOptions): Promise<InitResult[]> {
       await writeJsonIfChanged(t.name, settingsPath, cfg, existed, out, opts.dryRun);
       out.push({ agent: t.name, what: "hook-user", dir: userHook, status: "installed" });
     } else if (t.name === "opencode") {
-      // opencode has no prompt-injection hook; the compaction hook keeps the
-      // context capsule alive across session compaction. Plugin file, not a
-      // JSON entry. Defensive: unknown input shapes degrade to no-op.
+      // opencode V2 plugin API (V1 plugin bodies do not run in V2). Direct
+      // files under plugins/ are auto-discovered, so no config entry is
+      // written. The compaction hook keeps the capsule alive across session
+      // compaction; execute.after keeps post-edit blast radius. Defensive:
+      // unknown input shapes degrade to no-op.
       const pluginsDir = opts.project ? path.join(opts.repo, ".opencode", "plugins") : path.join(homedir(), ".config", "opencode", "plugins");
       const pluginPath = path.join(pluginsDir, "context.ts");
-      const plugin = `export const ContextCompactionPlugin = async ({ directory, $ }) => {
-  let lastTask = "";
-  const capture = (text) => {
-    if (text && text.trim().length >= 40) lastTask = text.trim();
-  };
-  const EDIT_TOOLS = ["edit", "write", "apply_patch"];
-  return {
-    event: async ({ event }) => {
+      const plugin = `import { Plugin } from "@opencode/plugin";
+import { execFileSync } from "node:child_process";
+
+export default Plugin.define({
+  id: "context.compaction",
+  async setup(ctx) {
+    const directory = ctx.location.directory;
+    let lastTask = "";
+    const capture = (text) => {
+      if (text && text.trim().length >= 40) lastTask = text.trim();
+    };
+    const EDIT_TOOLS = ["edit", "write", "apply_patch"];
+
+    await ctx.session.hook("prompt", (event) => {
+      capture(event?.prompt?.text ?? "");
+    });
+
+    await ctx.tool.hook("execute.after", (event) => {
       try {
-        const msg = event?.message ?? event?.data?.message;
-        const text = msg?.text ?? msg?.content ?? (typeof msg === "string" ? msg : "");
-        if (Array.isArray(text)) text.forEach(capture);
-        else capture(text);
-      } catch {}
-    },
-    "tool.execute.after": async (input, output) => {
-      try {
-        const tool = String(input?.tool ?? "");
-        if (!EDIT_TOOLS.includes(tool) || !directory) return;
-        const args = output?.args ?? {};
+        if (event?.status !== "completed" || !EDIT_TOOLS.includes(event.tool) || !directory) return;
+        const args = event.input ?? {};
         // opencode: edit/write carry filePath; apply_patch carries marker lines
         // in patchText (docs: check "apply_patch", not "patch")
         let file = args.filePath ?? args.path ?? args.file_path ?? null;
-        if (!file && tool === "apply_patch" && args.patchText && typeof args.patchText === "string") {
+        if (!file && event.tool === "apply_patch" && typeof args.patchText === "string") {
           file = args.patchText.match(/^\\*\\*\\*\\s+(?:Add|Update)\\s+File:\\s+(.+)$/m)?.[1] ?? null;
         }
         if (!file) return;
-        const br = await $\`context hook-edit --text\`.input(JSON.stringify({ file_path: file, cwd: directory })).text();
-        const txt = br?.trim?.();
-        if (txt) output.output = output.output ? output.output + "\\n\\n" + txt : txt;
+        const txt = execFileSync("context", ["hook-edit", "--text"], {
+          input: JSON.stringify({ file_path: file, cwd: directory }),
+          encoding: "utf8",
+        }).trim();
+        if (!txt) return;
+        const prev = event.result?.content;
+        event.result = {
+          ...event.result,
+          content: typeof prev === "string"
+            ? (prev ? prev + "\\n\\n" + txt : txt)
+            : Array.isArray(prev)
+              ? [...prev, { type: "text", text: txt }]
+              : txt,
+        };
       } catch {}
-    },
-    "experimental.session.compacting": async (input, output) => {
+    });
+
+    await ctx.session.hook("compaction", (event) => {
       try {
         if (!lastTask || !directory) return;
-        const cap = await $\`context observe \${lastTask} --budget 600 --json\`.text();
+        const cap = execFileSync("context", ["observe", lastTask, "--budget", "600", "--json"], {
+          encoding: "utf8",
+          cwd: directory,
+        });
         const c = JSON.parse(cap);
-        output.context.push(\`[context capsule — navigation only]
-working_tree: \${c.workingTree ?? ""}
-directories: \${(c.dirs ?? []).map((d) => d.path).join(", ")}
-paths: \${(c.files ?? []).join(", ")}
-hits: \${(c.hits ?? []).map((h) => \`\${h.name} \${h.file}:\${h.line}\`).join("; ")}
-expand with: context expand \${c.hits?.[0]?.handle ?? ""}\`);
+        event.system.push({
+          type: "text",
+          text: "[context capsule — navigation only]\\n" +
+            "working_tree: " + (c.workingTree ?? "") + "\\n" +
+            "directories: " + (c.dirs ?? []).map((d) => d.path).join(", ") + "\\n" +
+            "paths: " + (c.files ?? []).join(", ") + "\\n" +
+            "hits: " + (c.hits ?? []).map((h) => h.name + " " + h.file + ":" + h.line).join("; ") + "\\n" +
+            "expand with: context expand " + (c.hits?.[0]?.handle ?? ""),
+        });
       } catch {}
-    },
-  };
-};
+    });
+  },
+});
 `;
       await fs.mkdir(pluginsDir, { recursive: true });
       const before = await fs.readFile(pluginPath, "utf8").catch(() => "");
@@ -363,20 +385,48 @@ expand with: context expand \${c.hits?.[0]?.handle ?? ""}\`);
       await fs.writeFile(pluginPath, plugin);
       out.push({ agent: t.name, what: "hooks-config", dir: pluginPath, status: before ? "updated" : "installed" });
     } else if (t.name === "codex") {
-      // codex supports UserPromptSubmit (prompt injection, same shape as
-      // claude) and Stop (common output fields) via ~/.codex/hooks.json.
-      const hooksPath = opts.project ? path.join(opts.repo, ".codex", "hooks.json") : path.join(homedir(), ".codex", "hooks.json");
-      const loaded = await loadHookFile(t.name, opts, hooksPath, out);
-      if (!loaded) continue;
-      const { cfg, existed } = loaded;
+      // Codex's Agent Plugins are the aligned target: one bundle carries the
+      // hooks and the skill. The direct ~/.codex/hooks.json path still exists
+      // but is not written here — plugin hooks and user hooks both run, which
+      // would inject the capsule twice. Plugin hooks are not trusted until the
+      // user reviews them in /hooks, so the install reports that follow-up.
+      const pluginRoot = opts.project
+        ? path.join(opts.repo, ".codex", "plugins", "context")
+        : path.join(homedir(), ".codex", "plugins", "context");
+      const marketplaceRoot = opts.project ? opts.repo : homedir();
+      const pluginHooks: { hooks: Record<string, unknown[]> } = { hooks: {} };
       // matcher only where Codex honors it; SessionStart re-orients after
       // startup, resume, and compaction; PostToolUse fires on edits (apply_patch)
-      applyHookGroups(cfg, [
+      applyHookGroups(pluginHooks, [
         { event: "SessionStart", command: sessionHook, timeout: 10, matcher: "startup|resume|compact" },
         { event: "UserPromptSubmit", command: userHook, timeout: 15 },
         { event: "PostToolUse", command: editHook, timeout: 10, matcher: "apply_patch|Edit|Write" },
       ]);
-      await writeJsonIfChanged(t.name, hooksPath, cfg, existed, out, opts.dryRun);
+      const manifest = {
+        $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        name: "context",
+        version: pkg.version,
+        description: "Local evidence capsules for the current task",
+        extensions: { "com.openai": { hooks: "./hooks/hooks.json" } },
+      };
+      if (opts.dryRun) {
+        out.push({ agent: t.name, what: "hooks-config", dir: pluginRoot, status: "updated", note: "dry-run" });
+        continue;
+      }
+      const changed = await writePluginBundle(
+        path.join(pluginRoot, "plugin.json"), manifest,
+        path.join(pluginRoot, "hooks", "hooks.json"), pluginHooks,
+        path.join(pluginRoot, "skills", "context", "SKILL.md"),
+        path.join(await skillDir(), "SKILL.md"),
+      );
+      await upsertMarketplace(path.join(marketplaceRoot, ".agents", "plugins", "marketplace.json"), marketplaceRoot, pluginRoot);
+      out.push({
+        agent: t.name,
+        what: "hooks-config",
+        dir: pluginRoot,
+        status: changed ? "installed" : "unchanged",
+        note: "install with `codex plugin add context@personal`, then trust the hooks in /hooks",
+      });
       out.push({ agent: t.name, what: "hook-user", dir: userHook, status: "installed" });
     } else {
       out.push({ agent: t.name, what: "hooks-config", dir: "", status: "unselected", note: "hook wiring not shipped for this host yet" });
@@ -479,6 +529,52 @@ async function writeJsonIfChanged(agent: string, configPath: string, cfg: any, e
   }
   await fs.writeFile(configPath, next);
   out.push({ agent, what: "hooks-config", dir: configPath, status: existed ? "updated" : "created" });
+}
+
+/** Write an Agent Plugins bundle (manifest, hooks, skill copy); true if any file changed. */
+async function writePluginBundle(
+  manifestPath: string,
+  manifest: unknown,
+  hooksPath: string,
+  hooks: unknown,
+  skillPath: string,
+  skillSrc: string,
+): Promise<boolean> {
+  let changed = false;
+  const write = async (file: string, data: string) => {
+    const before = await fs.readFile(file, "utf8").catch(() => null);
+    if (before === data) return;
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, data);
+    changed = true;
+  };
+  await write(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+  await write(hooksPath, JSON.stringify(hooks, null, 2) + "\n");
+  await write(skillPath, await fs.readFile(skillSrc, "utf8"));
+  return changed;
+}
+
+/** Register the plugin in the personal/repo marketplace; `source.path` is
+ *  relative to the marketplace root, not to the marketplace file. */
+async function upsertMarketplace(marketplacePath: string, root: string, pluginRoot: string): Promise<void> {
+  let market: { name?: string; interface?: unknown; plugins?: unknown[] } = {};
+  try {
+    market = JSON.parse(await fs.readFile(marketplacePath, "utf8"));
+  } catch {
+    market = { name: "personal", interface: { displayName: "Personal" } };
+  }
+  const entry = {
+    name: "context",
+    source: { source: "local", path: "./" + path.relative(root, pluginRoot) },
+    policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
+    category: "Productivity",
+  };
+  const plugins = Array.isArray(market.plugins) ? market.plugins.filter((p) => (p as { name?: string })?.name !== "context") : [];
+  plugins.push(entry);
+  market.plugins = plugins;
+  await fs.mkdir(path.dirname(marketplacePath), { recursive: true });
+  const next = JSON.stringify(market, null, 2) + "\n";
+  if (await fs.readFile(marketplacePath, "utf8").catch(() => "") !== next) await fs.writeFile(marketplacePath, next);
 }
 
 async function exists(p: string): Promise<boolean> {
