@@ -72,7 +72,7 @@ const PROSE_TEXT_EXTS = new Set([
 ]);
 
 // anydoc-supported formats (content-detected, no extension needed)
-const ANYDOC_EXTS = new Set([
+export const ANYDOC_EXTS = new Set([
   ".doc",
   ".docm",
   ".docx",

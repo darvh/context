@@ -9,6 +9,7 @@ import { impact, renderImpact, type ImpactReport } from "./out/impact";
 import { changedFiles, coChangedFiles } from "./graph/diff";
 import { lastCapsulePath, writeJson, repoKey, readJson, sessionStatePath } from "./core/cache";
 import { buildBm25Index } from "./rank/bm25";
+import { ANYDOC_EXTS } from "./core/doc";
 import { appendSemanticHits } from "./rank/query";
 import { estTokens } from "./core/tokens";
 import { buildInfo } from "./cli/version";
@@ -192,6 +193,13 @@ async function cmdRead(args: Args) {
   if (d?.text) {
     process.stdout.write(d.text + "\n");
     return;
+  }
+  // Binary documents have no raw-text reading: without extracted markdown the
+  // only honest answer is "no extractable text", not the raw bytes. (A PDF
+  // dumped as bytes once sent an agent into hand-rolled zlib parsing.)
+  if (ANYDOC_EXTS.has(path.extname(target.rel).toLowerCase())) {
+    console.error(`context: no extractable text in ${file} — use a text/HTML sibling or OCR`);
+    process.exit(1);
   }
   try {
     process.stdout.write(await fs.readFile(target.path, "utf8"));
