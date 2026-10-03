@@ -73,6 +73,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Generate large-repo fixture (deterministic, no downloads)
+        run: bun run fixture --size small
+
       - name: Run tests
         run: bun test
 
