@@ -2,6 +2,53 @@
 
 Deterministic discovery compiler for coding agents. Turns a task plus the current working tree into a small, source-backed context capsule — the deterministic core needs no model, no embeddings, and no repo-local state (an opt-in local semantic lane exists for weak queries).
 
+[![CI](https://img.shields.io/github/actions/workflow/status/darvh/context/ci.yml?branch=main&label=CI)](https://github.com/darvh/context/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/badge/release-v0.1.1-blue)](https://github.com/darvh/context/releases/tag/v0.1.1)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+Context is local-first code search and retrieval for AI coding agents: point it at a repository and get a compact, source-backed context capsule — ranked hits with provenance, confidence, and handles that fetch exact spans — instead of a whole-repo dump. It is a Bun/TypeScript CLI built on tree-sitter parsing and deterministic lexical + graph ranking; no hosted index, no API keys, no repository-local state.
+
+## Quickstart
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/darvh/context/main/install.sh | bash
+```
+
+Source install from a checkout:
+
+```bash
+bash install.sh --local
+```
+
+Then, from any repository:
+
+```bash
+context observe "where is session persistence handled?"
+```
+
+## Supported agents
+
+`context init` installs the host-neutral skill into each agent's skill directory (user or project scope) and wires hooks where the host supports them:
+
+| Agent | Skill | Hooks |
+|---|---|---|
+| opencode (V2) | ✓ | compaction plugin + post-edit blast radius |
+| Claude Code | ✓ | SessionStart, UserPromptSubmit, PostToolUse, statusline |
+| Codex | ✓ | SessionStart, UserPromptSubmit, PostToolUse |
+| Cursor | ✓ | — |
+| Copilot | ✓ | — |
+| Antigravity | ✓ | — |
+| Pi | ✓ | — |
+
+## Why
+
+Embeddings- and vector-DB-first retrieval needs an embedding pass and a vector store, and every edit can invalidate the index; similarity scores are hard to inspect, and a remote index or hosted API is often required. Context defaults to the opposite:
+
+- **Deterministic first.** Exact lookup, filters, and lexical/graph ranking run on-device and produce the same capsule for a fixed tree + task; no model, no API key.
+- **Evidence over answers.** Every hit carries provenance, per-hit confidence, and handles that fetch exact spans — inspectable, not an opaque similarity score.
+- **Incremental by content.** The content-addressed cache reparses only changed files, so an edit never invalidates a whole-repo index.
+- **Embeddings stay optional.** The local ONNX semantic lane appends below graph/lexical hits for weak queries only, never re-ranks, and any failure degrades to the deterministic result.
+
 Bun/TypeScript MVP, Tree-sitter for Go / TypeScript / JavaScript / Python (bespoke walkers) plus Java / Ruby / Rust / C / C++ / C# / PHP / Bash (shared generic walker), plain external content-addressed cache, deterministic lexical + graph ranking.
 
 ## Core principles

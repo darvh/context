@@ -1,11 +1,46 @@
 {
   "name": "context",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "deterministic discovery compiler for coding agents",
+  "keywords": [
+    "agent",
+    "coding-agent",
+    "code-search",
+    "retrieval",
+    "tree-sitter",
+    "context",
+    "cli",
+    "bun",
+    "typescript",
+    "mcp"
+  ],
+  "homepage": "https://github.com/darvh/context",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/darvh/context.git"
+  },
+  "bugs": {
+    "url": "https://github.com/darvh/context/issues"
+  },
+  "license": "MIT",
   "type": "module",
   "module": "src/cli.ts",
   "bin": {
     "context": "./src/cli.ts"
+  },
+  "files": [
+    "src",
+    "scripts",
+    "skills",
+    "grammars",
+    "install.sh",
+    "install.ps1",
+    "tsconfig.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.2.0"
   },
   "scripts": {
     "start": "bun run src/cli.ts",
