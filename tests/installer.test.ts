@@ -88,6 +88,9 @@ describe("install.sh", () => {
     const home = path.join(tmpdir(), "ctx-home-" + Date.now() + "-" + Math.random().toString(36).slice(2));
     await fs.mkdir(proj, { recursive: true });
     await fs.mkdir(home, { recursive: true });
+    // Agent presence is required for --create to touch a target; the config-dir
+    // probe is the documented fallback when no CLI is on PATH (CI has none).
+    await fs.mkdir(path.join(home, ".pi"), { recursive: true });
     const { code, out } = await run(["bash", INSTALL, "--local", "--targets", "pi"], proj, home);
     expect(code).toBe(0);
     expect(out).toContain("pi");
@@ -106,6 +109,8 @@ describe("install.sh", () => {
     const home = path.join(tmpdir(), "ctx-home-" + Date.now() + "-" + Math.random().toString(36).slice(2));
     await fs.mkdir(proj, { recursive: true });
     await fs.mkdir(home, { recursive: true });
+    await fs.mkdir(path.join(home, ".claude"), { recursive: true });
+    await fs.mkdir(path.join(home, ".config", "opencode"), { recursive: true });
     await run(["bash", INSTALL, "--local", "--targets", "claude-code,opencode"], proj, home);
     expect(existsSync(path.join(home, ".claude", "settings.json"))).toBe(true);
     expect(existsSync(path.join(home, ".config", "opencode", "plugins", "context.ts"))).toBe(true);
