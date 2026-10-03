@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { withTimeout } from "../core/async";
 import { atomicWrite, cacheDir } from "../core/cache";
+import { runtimeKind } from "../cli/version";
 import type { DocFact } from "../core/doc";
 import { dirOf } from "../graph/dirmap";
 import type { Graph, Span } from "../core/facts";
@@ -96,13 +97,26 @@ async function modelHash(): Promise<string> {
 type Pipe = (texts: string[], opts: Record<string, unknown>) => Promise<{ data: Float32Array; dims: number[] }>;
 
 let pipeP: Promise<Pipe | null> | null = null;
+let warnedUnavailable = false;
 function loadPipeline(): Promise<Pipe | null> {
   if (!pipeP) {
     pipeP = (async () => {
       const { pipeline } = await import("@huggingface/transformers");
       const p = await pipeline("feature-extraction", await modelName(), { dtype: DTYPE, device: "cpu" });
       return p as Pipe;
-    })().catch(() => null);
+    })().catch((error) => {
+      // Requested but unavailable must not look like "no results": say so once,
+      // then stay fail-open. The compiled binary reports its runtime so a user
+      // can tell a missing runtime library from an empty corpus.
+      if (!warnedUnavailable) {
+        warnedUnavailable = true;
+        const reason = error instanceof Error ? error.message : String(error);
+        console.error(
+          `context: semantic unavailable in the ${runtimeKind()} runtime (${reason}); using lexical retrieval`,
+        );
+      }
+      return null;
+    });
   }
   return pipeP;
 }
