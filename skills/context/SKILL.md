@@ -21,7 +21,7 @@ description: Deterministic repository discovery for coding agents. For non-trivi
 - `context follow <symbol> <symbol2>` — two-symbol path
 - `context impact <symbol>` — callers, tests, documented_by, diff
 - `context expand <handle|file:line>` — matched span: code or doc section
-- `context read <file>` — whole doc; binary PDF/Office can't be read directly
+- `context read <file>` — whole doc; HTML/binary return cached Markdown when extractable, else a clear failure (never raw bytes)
 
 `confidence`: `strong` trust and go; `conflicted` competing neighborhoods — read to pick; `weak`/`empty` fall back to grep/rg.
 
